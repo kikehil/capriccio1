@@ -1940,7 +1940,9 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
             "Receiver": {
                 "Rfc": rfc.trim().toUpperCase(),
                 "Name": nombre.trim().toUpperCase(),
-                "CfdiUse": uso_cfdi
+                "CfdiUse": uso_cfdi,
+                "FiscalRegime": regimen_fiscal,
+                "TaxZipCode": cp_fiscal.trim()
             },
             "Items": [
                 {
