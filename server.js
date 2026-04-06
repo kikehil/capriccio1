@@ -1966,7 +1966,7 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
             ]
         };
 
-        const createRes = await facturamaRequest('POST', '/cfdis', cfdi);
+        const createRes = await facturamaRequest('POST', '/3/cfdis', cfdi);
         if (createRes.status !== 201 && createRes.status !== 200) {
             console.error('[facturacion] Facturama error:', JSON.stringify(createRes.body));
             const msg = createRes.body?.Message
@@ -1982,7 +1982,7 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
         // Descargar PDF en base64
         let pdfBase64 = null;
         try {
-            const pdfRes = await facturamaRequest('GET', `/cfdis/issued/pdf/${cfdiId}`);
+            const pdfRes = await facturamaRequest('GET', `/cfdi/issued/pdf/${cfdiId}`);
             if (pdfRes.status === 200 && pdfRes.body?.Content) pdfBase64 = pdfRes.body.Content;
         } catch (pdfErr) {
             console.warn('[facturacion] PDF download warning:', pdfErr.message);
