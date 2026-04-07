@@ -1954,6 +1954,7 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
                     "UnitPrice": subtotal,
                     "Quantity": 1,
                     "Subtotal": subtotal,
+                    "TaxObject": "02",
                     "Taxes": [
                         {
                             "Total": iva,
