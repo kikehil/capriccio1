@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { CajaTurno } from '@/data/caja-types';
-import NumericKeypad from '@/components/ui/NumericKeypad';
 
 interface StepProps {
   formData: any;
@@ -20,8 +19,6 @@ const CustomerInfoStep: React.FC<StepProps> = ({
   onPrev,
 }) => {
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showPhoneKeypad, setShowPhoneKeypad] = useState(false);
-  const phoneRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (field: string, value: string) => {
     updateFormData({ [field]: value });
@@ -71,36 +68,22 @@ const CustomerInfoStep: React.FC<StepProps> = ({
         </div>
 
         {/* TELÉFONO */}
-        <div className="relative">
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Teléfono *
           </label>
           <input
-            ref={phoneRef}
-            type="text"
+            type="tel"
             value={formData.telefono}
             onChange={(e) => handleChange('telefono', e.target.value)}
-            onFocus={() => setShowPhoneKeypad(true)}
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition text-gray-900 bg-white ${
               errors.telefono ? 'border-red-500' : 'border-gray-300'
             }`}
-            placeholder="Toca o escribe el teléfono"
+            placeholder="Ej: 8331234567"
+            maxLength={15}
           />
           {errors.telefono && (
             <p className="text-red-600 text-sm mt-1">{errors.telefono}</p>
-          )}
-
-          {/* Floating keypad */}
-          {showPhoneKeypad && (
-            <div className="absolute left-0 top-full mt-1 z-50 shadow-2xl">
-              <NumericKeypad
-                value={formData.telefono}
-                onChange={(val) => handleChange('telefono', val)}
-                onAccept={() => setShowPhoneKeypad(false)}
-                onClose={() => setShowPhoneKeypad(false)}
-                showDot={false}
-              />
-            </div>
           )}
         </div>
 

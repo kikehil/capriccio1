@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Clock, RefreshCcw, ChefHat, Bike, Store, ShoppingBag } from 'lucide-react';
+import { Check, Clock, RefreshCcw, ChefHat, Bike, Store, ShoppingBag, Printer } from 'lucide-react';
 import { CartItem } from '@/data/cart';
 import { getSocket, API_URL } from '@/lib/socket';
 import { cn } from '@/lib/utils';
@@ -48,6 +48,11 @@ const KitchenDisplay = () => {
     const [currentTime, setCurrentTime] = useState<string>('');
     const [isLoaded, setIsLoaded] = useState(false);
     const [lastSync, setLastSync] = useState<Date>(new Date());
+    const [printEnabled, setPrintEnabled] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return true;
+        const saved = localStorage.getItem('capriccio_cocina_print');
+        return saved === null ? true : saved === 'true';
+    });
 
     const fetchOrders = async () => {
         setIsLoaded(false);
@@ -226,45 +231,62 @@ const KitchenDisplay = () => {
         }).join('\n');
 
         const orderId = order.order_id || order.id;
-        const shortId = orderId.split('-')[1] || orderId.slice(-4);
+        const shortId = orderId.split('-')[1]?.toUpperCase() || orderId.slice(-6).toUpperCase();
         const fecha = new Date().toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+        const entregaLabel = (order as any).metodo_entrega === 'domicilio' ? '🚗 A DOMICILIO'
+            : (order as any).metodo_entrega === 'para_llevar' ? '🛍 PARA LLEVAR'
+            : (order as any).metodo_entrega === 'sucursal' ? '🏪 EN SUCURSAL'
+            : ((order as any).metodo_entrega || '').toUpperCase();
 
         const ticketHTML = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Ticket #${shortId}</title>
 <style>
     @page { margin: 0; size: 80mm auto; }
     * { box-sizing: border-box; }
-    body { font-family: 'Courier New', monospace; width: 76mm; margin: 0; padding: 4mm; font-size: 11px; line-height: 1.3; }
+    body { font-family: 'Courier New', monospace; width: 76mm; margin: 0 auto; padding: 4mm 4mm 8mm; font-size: 12px; line-height: 1.4; }
     .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .line { border-top: 1px dashed #000; margin: 4px 0; }
-    h2 { margin: 2px 0; font-size: 15px; letter-spacing: 1px; }
-    pre { white-space: pre-wrap; font-size: 11px; font-family: inherit; margin: 0; }
+    .right  { text-align: right; }
+    .bold   { font-weight: bold; }
+    .big    { font-size: 18px; font-weight: bold; letter-spacing: 2px; }
+    .line   { border-top: 1px dashed #000; margin: 5px 0; }
+    .line-s { border-top: 1px solid #000; margin: 5px 0; }
+    h2 { margin: 2px 0; font-size: 16px; letter-spacing: 2px; }
+    pre { white-space: pre-wrap; font-size: 12px; font-family: inherit; margin: 0; }
+    .item { margin: 3px 0; }
 </style></head>
 <body>
-<div class="center bold"><h2>CAPRICCIO PIZZERIA</h2></div>
-<div class="line"></div>
-<div class="center bold" style="font-size:14px;">PEDIDO #${shortId}</div>
+<div class="center bold"><h2>★ CAPRICCIO PIZZERIA ★</h2></div>
+<div class="center" style="font-size:9px;">(833)108-9948 | capricciopizzeria.com</div>
+<div class="line-s"></div>
+<div class="center big">PEDIDO #${shortId}</div>
 <div class="center">${fecha}</div>
-${(order as any).cliente_nombre ? `<div>Cliente: <b>${(order as any).cliente_nombre}</b></div>` : ''}
-${(order as any).metodo_entrega ? `<div>Entrega: ${(order as any).metodo_entrega.toUpperCase()}</div>` : ''}
+<div class="line"></div>
+${(order as any).cliente_nombre ? `<div class="bold">Cliente: ${(order as any).cliente_nombre}</div>` : ''}
+${(order as any).telefono ? `<div>Tel: ${(order as any).telefono}</div>` : ''}
+${entregaLabel ? `<div class="bold">${entregaLabel}</div>` : ''}
 ${(order as any).direccion && (order as any).direccion !== 'Recoger en sucursal' ? `<div>Dir: ${(order as any).direccion}</div>` : ''}
 <div class="line"></div>
 <pre>${items}</pre>
 <div class="line"></div>
-${order.total ? `<div class="bold" style="text-align:right;font-size:13px;">TOTAL: $${order.total.toLocaleString()}</div>` : ''}
-${(order as any).notas ? `<div class="line"></div><div><b>Notas:</b> ${(order as any).notas}</div>` : ''}
-<div class="line"></div>
-<div class="center" style="font-size:9px;">*** LISTO PARA ENTREGA ***</div>
+${order.total ? `<div class="right bold" style="font-size:14px;">TOTAL: $${Number(order.total).toLocaleString('es-MX')}</div>` : ''}
+${(order as any).notas ? `<div class="line"></div><div><b>NOTAS:</b> ${(order as any).notas}</div>` : ''}
+<div class="line-s"></div>
+<div class="center bold" style="font-size:11px;">✓ LISTO PARA ENTREGA ✓</div>
+<div class="center" style="font-size:8px;margin-top:4px;">Gracias por su preferencia</div>
 </body></html>`;
 
-        // Imprimir en iframe oculto — NO abre nueva ventana ni diálogo si Chrome usa --kiosk-printing
+        // ── Imprimir vía iframe oculto ─────────────────────────────────────
+        // Con Chrome lanzado como: chrome.exe --kiosk-printing --app=URL
+        // window.print() dentro del iframe envía directo a la impresora
+        // predeterminada SIN mostrar ningún diálogo.
         const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;border:none;';
+        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:80mm;height:1px;opacity:0;border:none;';
         document.body.appendChild(iframe);
 
         const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (!doc) return;
+        if (!doc) { document.body.removeChild(iframe); return; }
+
         doc.open();
         doc.write(ticketHTML);
         doc.close();
@@ -273,17 +295,16 @@ ${(order as any).notas ? `<div class="line"></div><div><b>Notas:</b> ${(order as
             try {
                 iframe.contentWindow?.focus();
                 iframe.contentWindow?.print();
+                console.log(`🖨️ Ticket #${shortId} enviado a impresora`);
             } catch (e) {
-                console.error('Error al imprimir:', e);
+                console.error('❌ Error al imprimir ticket:', e);
             }
-            // Eliminar iframe tras imprimir
-            iframe.contentWindow?.addEventListener('afterprint', () => {
-                document.body.removeChild(iframe);
-            });
-            // Fallback: eliminar después de 10s si afterprint no dispara
-            setTimeout(() => {
+            // Limpiar iframe tras imprimir (o a los 15s por si acaso)
+            const cleanup = () => {
                 if (document.body.contains(iframe)) document.body.removeChild(iframe);
-            }, 10000);
+            };
+            iframe.contentWindow?.addEventListener('afterprint', cleanup);
+            setTimeout(cleanup, 15000);
         };
     };
 
@@ -295,7 +316,7 @@ ${(order as any).notas ? `<div class="line"></div><div><b>Notas:</b> ${(order as
             { status: 'listo' }
         );
         if (ok) {
-            generateTicketPDF(order);
+            if (printEnabled) generateTicketPDF(order);
             setOrders(prev => prev.filter(o => o.id !== id));
         }
     };
@@ -328,7 +349,7 @@ ${(order as any).notas ? `<div class="line"></div><div><b>Notas:</b> ${(order as
                     </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row items-start md:items-center gap-8">
+                <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
                     <button
                         onClick={fetchOrders}
                         className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-capriccio-gold px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border border-slate-800"
@@ -337,9 +358,46 @@ ${(order as any).notas ? `<div class="line"></div><div><b>Notas:</b> ${(order as
                         Sincronizar
                     </button>
 
+                    {/* Toggle impresión automática */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => {
+                                const next = !printEnabled;
+                                setPrintEnabled(next);
+                                localStorage.setItem('capriccio_cocina_print', String(next));
+                            }}
+                            className={cn(
+                                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all border",
+                                printEnabled
+                                    ? "bg-emerald-900/40 border-emerald-700/40 text-emerald-400 hover:bg-emerald-900/60"
+                                    : "bg-slate-900/60 border-slate-700/40 text-slate-500 hover:bg-slate-800"
+                            )}
+                            title={printEnabled ? "Impresión automática activa — clic para desactivar" : "Impresión desactivada — clic para activar"}
+                        >
+                            <Printer className="w-4 h-4" />
+                            {printEnabled ? 'Auto-Print ON' : 'Auto-Print OFF'}
+                        </button>
+
+                        {/* Botón prueba de impresión */}
+                        {printEnabled && (
+                            <button
+                                onClick={() => generateTicketPDF({
+                                    id: 'TEST-001', order_id: 'TEST-001',
+                                    items: [{ nombre: 'Pepperoni Capriccio', quantity: 1, size: 'Mediana', precio: 150, extras: [] } as any],
+                                    total: 150, createdAt: new Date().toISOString(), timestamp: new Date().toISOString(),
+                                    status: 'ready', metodo_entrega: 'para_llevar',
+                                } as any)}
+                                className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-all"
+                                title="Imprimir ticket de prueba"
+                            >
+                                Test 🖨️
+                            </button>
+                        )}
+                    </div>
+
                     <div className="text-left md:text-right">
                         <p className="text-4xl font-black text-slate-100 tabular-nums italic uppercase">{currentTime}</p>
-                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em]">Última sincronización: {lastSync.toLocaleTimeString()}</p>
+                        <p className="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em]">Última sync: {lastSync.toLocaleTimeString()}</p>
                     </div>
                 </div>
             </header>

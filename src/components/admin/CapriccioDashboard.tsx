@@ -107,7 +107,8 @@ export default function CapriccioDashboard() {
         const d = new Date();
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const found = semanal.find(s => s.dia === dateStr);
+        // s.dia puede llegar como "2026-04-27" o "2026-04-27T00:00:00.000Z"
+        const found = semanal.find(s => (s.dia ?? '').slice(0, 10) === dateStr);
         chartDays.push({
             dia: i === 0 ? 'Hoy' : formatDay(dateStr),
             ventas: found ? Number(found.ventas) : 0,

@@ -247,11 +247,11 @@ app.get('/api/productos', async (req, res) => {
 });
 
 app.post('/api/productos', adminOnly, async (req, res) => {
-    const { nombre, descripcion, precio, imagen, categoria, activo, precios } = req.body;
+    const { nombre, descripcion, precio, imagen, categoria, activo } = req.body;
     try {
         const result = await db.query(
-            'INSERT INTO productos (nombre, descripcion, precio, imagen, categoria, activo, precios) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [nombre, descripcion, precio, imagen, categoria, activo ?? true, precios ?? null]
+            'INSERT INTO productos (nombre, descripcion, precio, imagen, categoria, activo) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [nombre, descripcion, precio, imagen, categoria, activo]
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -473,6 +473,7 @@ app.post('/api/pedidos', async (req, res) => {
         await connection.commit();
         io.emit('nuevo_pedido', {
             cliente_nombre,
+            telefono,
             direccion,
             order_id: orderId,
             total: validatedTotal,
@@ -483,39 +484,6 @@ app.post('/api/pedidos', async (req, res) => {
         });
         console.log('✅ [PEDIDO] Guardado exitoso:', orderId);
         res.status(201).json({ success: true, order_id: orderId });
-
-        // Notificaciones WhatsApp (async, no bloquea la respuesta)
-        const shortId = orderId.split('-')[1]?.toUpperCase() || orderId.slice(-6).toUpperCase();
-        const esEntregaLocal = metodo_entrega === 'sucursal' || metodo_entrega === 'para_llevar';
-        const tiempoEstimado = esEntregaLocal ? '20-25 minutos' : '~40 minutos';
-        const resumenItems = validatedItems.map(i =>
-            `• ${i.quantity}x ${i.nombre}${i.size ? ` (${i.size})` : ''} — $${i.totalItemPrice * i.quantity}`
-        ).join('\n');
-
-        const msgCliente = `🍕 *¡Hola ${cliente_nombre}!*\n\nTu pedido *#${shortId}* fue recibido correctamente.\n\n*Resumen:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*\n⏱ Tiempo estimado: ${tiempoEstimado}\n\n¡Gracias por tu preferencia! 🙌`;
-
-        const modoEntrega = metodo_entrega === 'domicilio' ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}${referencias ? `\n📝 Ref: ${referencias}` : ''}` : `🏪 *Recoger en sucursal*`;
-        const msgNegocio = `🔔 *NUEVO PEDIDO #${shortId}*\n🌐 *Origen: Página Web*\n\n👤 ${cliente_nombre}\n📞 ${telefono}\n${modoEntrega}\n\n*Artículos:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*`;
-
-        const EVOLUTION_URL = 'https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizza';
-        const EVOLUTION_KEY = 'DF0ACCC20D48-4293-A570-A30D6C532231';
-        const NEGOCIO_NUM = '5218181190257@s.whatsapp.net';
-
-        const sendWA = async (number, text) => {
-            try {
-                await fetch(EVOLUTION_URL, {
-                    method: 'POST',
-                    headers: { 'apikey': EVOLUTION_KEY, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ number, text })
-                });
-            } catch (e) {
-                console.error('⚠️ WA send error:', e.message);
-            }
-        };
-
-        const clienteNum = (telefono_cliente || telefono || '').replace(/\D/g, '');
-        if (clienteNum) sendWA(`${clienteNum}@s.whatsapp.net`, msgCliente);
-        sendWA(NEGOCIO_NUM, msgNegocio);
     } catch (err) {
         await connection.rollback();
         console.error("❌ [PEDIDO] Error:", err.message);
@@ -737,13 +705,13 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
         const liquidados = await db.query(
             "SELECT SUM(total) as monto, COUNT(*) as cantidad FROM pedidos WHERE date(created_at) = $1 AND liquidado = 1", [today]);
 
-        // 2. Gráfica semanal (últimos 7 días) — ::text fuerza formato 'YYYY-MM-DD' en JSON
+        // 2. Gráfica semanal (últimos 7 días)
         const semanal = await db.query(`
-            SELECT created_at::date::text as dia,
+            SELECT date(created_at) as dia,
                    SUM(total) as ventas,
                    COUNT(*) as pedidos
             FROM pedidos
-            WHERE created_at::date >= CURRENT_DATE - INTERVAL '6 days' AND status != 'cancelado'
+            WHERE date(created_at) >= date('now','-6 days') AND status != 'cancelado'
             GROUP BY dia ORDER BY dia
         `);
 
@@ -759,49 +727,39 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
 
         // 4. Promedio de tiempo de entrega HOY (created_at → delivered_at), max 3h para filtrar outliers
         const avgEntrega = await db.query(`
-            SELECT ROUND(AVG(diff_mins)::numeric, 0) as promedio_minutos,
+            SELECT ROUND(AVG(diff_mins), 0) as promedio_minutos,
                    COUNT(*) as total_entregados
             FROM (
-                SELECT EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60 as diff_mins
+                SELECT (julianday(delivered_at) - julianday(created_at)) * 24 * 60 as diff_mins
                 FROM pedidos
                 WHERE status = 'entregado'
                   AND delivered_at IS NOT NULL
-                  AND created_at::date = $1
-                  AND EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60 BETWEEN 1 AND 180
-            ) as t
+                  AND date(created_at) = $1
+                  AND (julianday(delivered_at) - julianday(created_at)) * 24 * 60 BETWEEN 1 AND 180
+            )
         `, [today]);
 
         // 5. Clientes registrados (total y nuevos hoy)
         const clientesStats = await db.query(`
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN created_at::date = $1 THEN 1 ELSE 0 END) as nuevos_hoy
+                   SUM(CASE WHEN date(created_at) = $1 THEN 1 ELSE 0 END) as nuevos_hoy
             FROM clientes WHERE verificado = 1
         `, [today]);
 
         // 6. Top repartidores: eficiencia (asignado_at → delivered_at), pedidos hoy y semana
-        let topRepartidores = { rows: [] };
-        try {
-            topRepartidores = await db.query(`
-                SELECT repartidor,
-                       ROUND(AVG(EXTRACT(EPOCH FROM (d_at - a_at)) / 60)::numeric, 1) as avg_minutos,
-                       SUM(CASE WHEN d_at::date = $1 THEN 1 ELSE 0 END) as pedidos_hoy,
-                       SUM(CASE WHEN d_at::date >= CURRENT_DATE - INTERVAL '6 days' THEN 1 ELSE 0 END) as pedidos_semana
-                FROM (
-                    SELECT repartidor,
-                           delivered_at::timestamptz as d_at,
-                           asignado_at::timestamptz  as a_at
-                    FROM pedidos
-                    WHERE status = 'entregado'
-                      AND delivered_at ~ '^\\d{4}-\\d{2}-\\d{2}'
-                      AND asignado_at ~ '^\\d{4}-\\d{2}-\\d{2}'
-                      AND repartidor NOT IN ('S/A','sucursal')
-                ) sub
-                GROUP BY repartidor
-                ORDER BY avg_minutos ASC LIMIT 10
-            `, [today]);
-        } catch(e) {
-            console.warn('⚠️ topRepartidores query skipped:', e.message);
-        }
+        const topRepartidores = await db.query(`
+            SELECT repartidor,
+                   ROUND(AVG((julianday(delivered_at) - julianday(asignado_at)) * 24 * 60), 1) as avg_minutos,
+                   SUM(CASE WHEN date(delivered_at) = $1 THEN 1 ELSE 0 END) as pedidos_hoy,
+                   SUM(CASE WHEN date(delivered_at) >= date('now','-6 days') THEN 1 ELSE 0 END) as pedidos_semana
+            FROM pedidos
+            WHERE status = 'entregado'
+              AND delivered_at IS NOT NULL
+              AND asignado_at IS NOT NULL
+              AND repartidor NOT IN ('S/A','sucursal')
+            GROUP BY repartidor
+            ORDER BY avg_minutos ASC LIMIT 10
+        `, [today]);
 
         res.json({
             tarjetas: {
@@ -834,9 +792,9 @@ app.get('/api/admin/top-productos', adminOnly, async (req, res) => {
         const today = getBusinessDate();
 
         let dateFilter;
-        if (periodo === 'semana') dateFilter = `p.created_at::date >= CURRENT_DATE - INTERVAL '6 days'`;
-        else if (periodo === 'mes') dateFilter = `TO_CHAR(p.created_at, 'YYYY-MM') = TO_CHAR(NOW(), 'YYYY-MM')`;
-        else dateFilter = `p.created_at::date = '${today}'`;
+        if (periodo === 'semana') dateFilter = `date(p.created_at) >= date('now','-6 days')`;
+        else if (periodo === 'mes') dateFilter = `strftime('%Y-%m', p.created_at) = strftime('%Y-%m', 'now')`;
+        else dateFilter = `date(p.created_at) = '${today}'`;
 
         const result = await db.query(`
             SELECT dp.pizza_nombre as nombre,
@@ -874,10 +832,10 @@ app.get('/api/admin/reportes', adminOnly, async (req, res) => {
         let queryStr = "SELECT * FROM pedidos";
         let params = [];
         if (inicio && fin) {
-            queryStr += " WHERE (created_at - INTERVAL '6 hours')::date >= $1 AND (created_at - INTERVAL '6 hours')::date <= $2";
+            queryStr += " WHERE date(created_at, '-6 hours') >= $1 AND date(created_at, '-6 hours') <= $2";
             params = [inicio, fin];
         } else if (inicio) {
-            queryStr += " WHERE (created_at - INTERVAL '6 hours')::date = $1";
+            queryStr += " WHERE date(created_at, '-6 hours') = $1";
             params = [inicio];
         }
         queryStr += " ORDER BY created_at DESC";
@@ -970,57 +928,65 @@ io.on('connection', (socket) => {
 // MÓDULO DE CLIENTES — LOYALTY PROGRAM
 // ============================================================
 
-// Inicializar tablas clientes al arranque si no existen
+// Inicializar tabla clientes al arranque
 (async () => {
-    try {
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS clientes (
-                id SERIAL PRIMARY KEY,
-                nombre TEXT NOT NULL,
-                telefono TEXT UNIQUE NOT NULL,
-                email TEXT,
-                password_hash TEXT NOT NULL,
-                verificado INTEGER DEFAULT 0,
-                codigo_verificacion TEXT,
-                codigo_expira TEXT,
-                puntos INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        console.log('✅ Tabla clientes lista');
+    const dbConn = await db.dbPromise;
+    await dbConn.run(`
+        CREATE TABLE IF NOT EXISTS clientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            telefono TEXT UNIQUE NOT NULL,
+            email TEXT,
+            password_hash TEXT NOT NULL,
+            verificado INTEGER DEFAULT 0,
+            codigo_verificacion TEXT,
+            codigo_expira TEXT,
+            puntos INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    `);
+    console.log('✅ Tabla clientes lista');
 
-        // Tabla historial de puntos
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS puntos_historial (
-                id SERIAL PRIMARY KEY,
-                cliente_id INTEGER NOT NULL REFERENCES clientes(id),
-                puntos INTEGER NOT NULL,
-                motivo TEXT NOT NULL,
-                descripcion TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        console.log('✅ Tabla puntos_historial lista');
+    // Tabla historial de puntos
+    await dbConn.run(`
+        CREATE TABLE IF NOT EXISTS puntos_historial (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER NOT NULL,
+            puntos INTEGER NOT NULL,
+            motivo TEXT NOT NULL,
+            descripcion TEXT,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+        )
+    `);
+    console.log('✅ Tabla puntos_historial lista');
 
-        // Tabla suscripciones push
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS push_subscriptions (
-                id SERIAL PRIMARY KEY,
-                cliente_id INTEGER REFERENCES clientes(id),
-                endpoint TEXT UNIQUE NOT NULL,
-                p256dh TEXT NOT NULL,
-                auth TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-        console.log('✅ Tabla push_subscriptions lista');
+    // Tabla suscripciones push
+    await dbConn.run(`
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER,
+            endpoint TEXT UNIQUE NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+        )
+    `);
+    console.log('✅ Tabla push_subscriptions lista');
 
-        // Verificar columnas en pedidos
-        // (En PG es mejor usar setup-pg.js para esto, pero mantenemos una versión compatible aquí)
-        console.log('✅ Verificación de tablas completada');
-    } catch (e) {
-        console.error('❌ Error al inicializar tablas:', e.message);
-    }
+    // Add columns if not exist (SQLite ALTER TABLE IF NOT EXISTS workaround)
+    const dbConn2 = await db.dbPromise;
+    const pedidosCols = await dbConn2.all("PRAGMA table_info(pedidos)");
+    const colNames = pedidosCols.map(c => c.name);
+    if (!colNames.includes('telefono_cliente')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN telefono_cliente TEXT");
+    if (!colNames.includes('calificacion')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN calificacion INTEGER DEFAULT 0");
+    if (!colNames.includes('calificacion_comentario')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN calificacion_comentario TEXT");
+    if (!colNames.includes('metodo_entrega')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN metodo_entrega TEXT DEFAULT 'domicilio'");
+    if (!colNames.includes('facturado')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN facturado INTEGER DEFAULT 0");
+    if (!colNames.includes('factura_uuid')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN factura_uuid TEXT");
+    if (!colNames.includes('facturado_at')) await dbConn2.run("ALTER TABLE pedidos ADD COLUMN facturado_at TEXT");
+    console.log('✅ Columnas tracking listas');
 })();
 
 // ─── PUSH NOTIFICATION HELPERS ────────────────────────────────────────────────
@@ -1460,8 +1426,8 @@ app.get('/api/caja/turno/activo', authorize(['admin', 'caja', 'responsable']), a
         const result = await db.query(
             `SELECT *,
                 CAST((julianday('now') - julianday(abierto_at)) * 86400 AS INTEGER) AS duracion_segundos,
-                TO_CHAR(abierto_at, 'HH24:MI:SS') AS hora_apertura_utc,
-                TO_CHAR(abierto_at, 'YYYY-MM-DD') AS fecha_apertura_utc
+                strftime('%H:%M:%S', abierto_at) AS hora_apertura_utc,
+                strftime('%Y-%m-%d', abierto_at) AS fecha_apertura_utc
              FROM caja_turno
              WHERE cajero_id = $1 AND cerrado_at IS NULL AND negocio_id = $2
              ORDER BY abierto_at DESC LIMIT 1`,
@@ -1682,29 +1648,6 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
                 .then(() => console.log(`[Caja] ✅ WhatsApp enviado a ${telefono}`))
                 .catch(e => console.warn(`[Caja] ⚠️  WhatsApp no enviado: ${e.message}`));
         }
-
-        // 📲 Notificar al NEGOCIO por WhatsApp (Evolution API)
-        {
-            const shortIdCaja = order_id.split('-')[1]?.toUpperCase() || order_id.slice(-6).toUpperCase();
-            const origenLabel =
-                order_origin === 'whatsapp' || order_origin === 'bot' ? '💬 WhatsApp Bot' :
-                order_origin === 'web' ? '🌐 Página Web' :
-                '🏪 Punto de Venta';
-            const modoEntregaCaja = metodo_entrega === 'domicilio'
-                ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}`
-                : `🏪 *Recoger en sucursal*`;
-            const resumenCaja = items.map(i =>
-                `• ${i.cantidad || i.quantity}x ${i.pizza_nombre || i.nombre}${i.size ? ` (${i.size})` : ''} — $${(i.precio_unitario || i.totalItemPrice) * (i.cantidad || i.quantity)}`
-            ).join('\n');
-            const metodoPagoCaja = payment_method === 'tarjeta' ? '💳 Tarjeta' : payment_method === 'no_pago' ? '⏳ Pago en entrega' : '💵 Efectivo';
-            const msgNegocioCaja = `🔔 *NUEVO PEDIDO #${shortIdCaja}*\n${origenLabel}\n\n👤 ${cliente_nombre}\n📞 ${telefono || 'Sin teléfono'}\n${modoEntregaCaja}\n\n*Artículos:*\n${resumenCaja}\n\n💰 *Total: $${total}*\n${metodoPagoCaja}`;
-
-            fetch('https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizza', {
-                method: 'POST',
-                headers: { 'apikey': 'DF0ACCC20D48-4293-A570-A30D6C532231', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ number: '5218181190257@s.whatsapp.net', text: msgNegocioCaja })
-            }).catch(e => console.warn('[Caja] ⚠️ WA negocio no enviado:', e.message));
-        }
     } catch (e) {
         console.error('Error al crear pedido en caja:', e);
         res.status(500).json({ error: 'Error al crear pedido' });
@@ -1747,7 +1690,7 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
         const turnoResult = await db.query(
             `SELECT *,
                 CAST((julianday('now') - julianday(abierto_at)) * 86400 AS INTEGER) AS duracion_segundos,
-                TO_CHAR(abierto_at, 'HH24:MI:SS') AS hora_apertura_utc
+                strftime('%H:%M:%S', abierto_at) AS hora_apertura_utc
              FROM caja_turno WHERE id = $1`,
             [turno_id]
         );
@@ -2050,7 +1993,7 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
 
         // Marcar pedido como facturado
         await db.query(
-            `UPDATE pedidos SET facturado = 1, factura_uuid = $1, facturado_at = NOW() WHERE order_id = $2`,
+            `UPDATE pedidos SET facturado = 1, factura_uuid = $1, facturado_at = datetime('now','localtime') WHERE order_id = $2`,
             [uuid, pedido.order_id]
         );
 
@@ -2063,45 +2006,6 @@ app.post('/api/facturacion/solicitar', async (req, res) => {
 });
 
 // ============================================================
-
-// ─── Facebook Posts API ───────────────────────────────────────────────────────
-// GET /api/facebook/posts — devuelve los últimos posts de la página de Facebook
-// El token se guarda en .env como FACEBOOK_PAGE_TOKEN y nunca se expone al frontend
-app.get('/api/facebook/posts', async (req, res) => {
-    const token = process.env.FACEBOOK_PAGE_TOKEN;
-    const pageId = process.env.FACEBOOK_PAGE_ID;
-
-    if (!token || !pageId) {
-        return res.status(503).json({ error: 'Facebook no configurado', posts: [] });
-    }
-
-    try {
-        const url = `https://graph.facebook.com/v19.0/${pageId}/posts` +
-            `?fields=message,full_picture,created_time,permalink_url,attachments` +
-            `&limit=6&access_token=${token}`;
-
-        const fbRes = await fetch(url);
-        const data = await fbRes.json();
-
-        if (data.error) {
-            console.warn('⚠️ Facebook API error:', data.error.message);
-            return res.status(502).json({ error: data.error.message, posts: [] });
-        }
-
-        const posts = (data.data || []).map((p) => ({
-            id: p.id,
-            message: p.message || '',
-            full_picture: p.full_picture || null,
-            created_time: p.created_time,
-            permalink_url: p.permalink_url || 'https://www.facebook.com',
-        }));
-
-        res.json({ posts });
-    } catch (e) {
-        console.error('❌ Facebook fetch error:', e.message);
-        res.status(500).json({ error: 'Error al obtener posts', posts: [] });
-    }
-});
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`🚀 SERVIDOR EN PUERTO ${PORT}`));

@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { DollarSign, CreditCard } from 'lucide-react';
 import { PaymentMethod, CajaTurno } from '@/data/caja-types';
-import NumericKeypad from '@/components/ui/NumericKeypad';
 
 interface StepProps {
   formData: any;
@@ -21,7 +20,6 @@ const PaymentStep: React.FC<StepProps> = ({
   onPrev,
 }) => {
   const [montoRecibido, setMontoRecibido] = useState<string>('');
-  const [showKeypad, setShowKeypad] = useState(false);
   const [errors, setErrors] = useState<string>('');
 
   // Determinar si se cobra en caja
@@ -168,25 +166,13 @@ const PaymentStep: React.FC<StepProps> = ({
               </label>
               <div className="relative">
                 <input
-                  type="text"
+                  type="number"
                   value={montoRecibido}
                   onChange={(e) => handleMontoChange(e.target.value)}
-                  onFocus={() => setShowKeypad(true)}
                   className="w-full px-4 py-3 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none text-gray-900 bg-white"
                   placeholder="0"
+                  min="0"
                 />
-                {/* Floating keypad */}
-                {showKeypad && (
-                  <div className="absolute left-0 top-full mt-1 z-50">
-                    <NumericKeypad
-                      value={montoRecibido}
-                      onChange={(val) => handleMontoChange(val)}
-                      onAccept={() => setShowKeypad(false)}
-                      onClose={() => setShowKeypad(false)}
-                      showDot={false}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* RESUMEN */}

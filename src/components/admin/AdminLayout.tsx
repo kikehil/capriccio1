@@ -37,11 +37,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, activeTab, setActiv
         }
         if (item.id === 'platform') return false;
 
-        // 2. Dashboard Analytics — solo para usuario capriccio
-        if (item.id === 'dashboard') return username === 'capriccio';
+        // 2. Dashboard Analytics — para admins
+        if (item.id === 'dashboard') return userRole === 'admin' || username === 'capriccio';
 
-        // 2b. Usuario capriccio tiene acceso completo a todo (sin importar el plan)
-        if (username === 'capriccio') return true;
+        // 2b. Admin tiene acceso completo a todo (sin importar el plan)
+        if (userRole === 'admin' || username === 'capriccio') return true;
 
         // 3. ROL CAJA — solo ve Pedidos y puede acceder a POS
         if (userRole === 'caja') return ['stats', 'caja'].includes(item.id);

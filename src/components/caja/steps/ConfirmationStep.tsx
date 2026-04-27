@@ -21,6 +21,15 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
   const [success, setSuccess] = useState(false);
   const [orderId, setOrderId] = useState('');
 
+  // Calcular total desde items si formData.total no fue propagado correctamente
+  const computedTotal: number =
+    formData.total && formData.total > 0
+      ? formData.total
+      : (formData.items || []).reduce(
+          (sum: number, item: any) => sum + (item.precio_unitario ?? 0) * (item.cantidad ?? 1),
+          0
+        );
+
   const handleConfirm = async () => {
     setLoading(true);
     setError('');
@@ -57,6 +66,12 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       if (!response.ok) {
         const errorData = await response.text();
         console.error('❌ Error del servidor:', errorData);
+        // Token expirado: limpiar y recargar para re-autenticar
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem('capriccio_token_caja');
+          setTimeout(() => window.location.reload(), 1500);
+          throw new Error('Sesión expirada. Recargando para iniciar sesión nuevamente...');
+        }
         throw new Error(`Error ${response.status}: ${errorData}`);
       }
 
@@ -140,7 +155,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.text('TOTAL:', 5, yPos);
-    doc.text(`$${formData.total.toLocaleString()}`, 50, yPos);
+    doc.text(`$${computedTotal.toLocaleString()}`, 50, yPos);
     yPos += 8;
 
     // Pago
@@ -153,7 +168,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       yPos += 4;
 
       if (formData.payment_method === 'efectivo' && formData.monto_recibido) {
-        const cambio = formData.monto_recibido - formData.total;
+        const cambio = formData.monto_recibido - computedTotal;
         doc.text(`Recibido: $${formData.monto_recibido.toLocaleString()}`, 5, yPos);
         yPos += 4;
         doc.text(`Cambio: $${cambio.toLocaleString()}`, 5, yPos);
@@ -214,15 +229,16 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       <h2 className="text-2xl font-bold text-gray-800 mb-2">🎫 Valida el Pedido con el Cliente</h2>
       <p className="text-gray-600 mb-6">Muéstrale este detalle para que confirme su pedido</p>
 
-      {/* TICKET VISUAL */}
-      <div className="mb-6 bg-gradient-to-br from-gray-50 to-white border-2 border-gray-300 rounded-lg p-6 shadow-md"  style={{ fontFamily: 'monospace' }}>
-
+      {/* ERROR */}
       {error && (
-        <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg flex gap-3">
+        <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg flex gap-3">
           <AlertCircle size={20} className="flex-shrink-0" />
           <p>{error}</p>
         </div>
       )}
+
+      {/* TICKET VISUAL */}
+      <div className="mb-6 bg-gradient-to-br from-gray-50 to-white border-2 border-gray-300 rounded-lg p-6 shadow-md"  style={{ fontFamily: 'monospace' }}>
 
         {/* ENCABEZADO TICKET */}
         <div className="text-center mb-4 pb-4 border-b-2 border-gray-400">
@@ -288,7 +304,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
           <div className="space-y-2 text-sm">
             <div className="flex justify-between font-bold text-lg">
               <span>Total:</span>
-              <span className="text-red-600">${formData.total.toLocaleString()}</span>
+              <span className="text-red-600">${computedTotal.toLocaleString()}</span>
             </div>
             {formData.payment_method && formData.payment_method !== 'no_pago' && (
               <>
@@ -305,7 +321,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
                     <p>
                       <span className="text-gray-600">Cambio:</span>{' '}
                       <span className="font-semibold text-green-600">
-                        ${(formData.monto_recibido - formData.total).toLocaleString()}
+                        ${(formData.monto_recibido - computedTotal).toLocaleString()}
                       </span>
                     </p>
                   </>

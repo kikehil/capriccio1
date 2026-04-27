@@ -13,10 +13,17 @@ interface ProductManagerProps {
     onRefresh?: () => void;
 }
 
+const PIZZA_SIZES = [
+    { key: 'mini',    label: 'Mini' },
+    { key: 'chica',   label: 'Chica' },
+    { key: 'mediana', label: 'Mediana' },
+    { key: 'grande',  label: 'Grande' },
+];
+
 const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onRefresh }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
-    
+
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState<number | null>(null);
@@ -30,8 +37,11 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         precio: '',
         imagen: '',
         categoria: '🍕 Pizzas',
-        activo: true
+        activo: true,
+        precios: { mini: '', chica: '', mediana: '', grande: '' } as Record<string, string>
     });
+
+    const hasSizes = formData.categoria === '🍕 Pizzas';
 
     const categories = ['all', ...Array.from(new Set(products.map(p => p.categoria)))];
 
@@ -50,20 +60,33 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
             precio: '',
             imagen: '',
             categoria: '🍕 Pizzas',
-            activo: true
+            activo: true,
+            precios: { mini: '', chica: '', mediana: '', grande: '' }
         });
         setIsModalOpen(true);
     };
 
     const openEditModal = (product: Pizza) => {
         setEditingProduct(product);
+        // Parse precios — can be a JSON string or an object
+        let preciosObj: Record<string, string> = { mini: '', chica: '', mediana: '', grande: '' };
+        if (product.precios) {
+            const raw = typeof product.precios === 'string' ? JSON.parse(product.precios) : product.precios;
+            preciosObj = {
+                mini:    raw.mini    != null ? String(raw.mini)    : '',
+                chica:   raw.chica   != null ? String(raw.chica)   : '',
+                mediana: raw.mediana != null ? String(raw.mediana) : '',
+                grande:  raw.grande  != null ? String(raw.grande)  : '',
+            };
+        }
         setFormData({
-            nombre: product.nombre,
+            nombre:      product.nombre,
             descripcion: product.descripcion,
-            precio: String(product.precio),
-            imagen: product.imagen,
-            categoria: product.categoria,
-            activo: product.activo
+            precio:      String(product.precio),
+            imagen:      product.imagen,
+            categoria:   product.categoria,
+            activo:      product.activo,
+            precios:     preciosObj
         });
         setIsModalOpen(true);
     };
@@ -96,24 +119,46 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         try {
             const token = localStorage.getItem('capriccio_token_admin');
             const method = editingProduct ? 'PATCH' : 'POST';
-            const url = editingProduct 
-                ? `${API_URL}/api/productos/${editingProduct.id}` 
+            const url = editingProduct
+                ? `${API_URL}/api/productos/${editingProduct.id}`
                 : `${API_URL}/api/productos`;
+
+            // Build precios object — only for pizza categories, ignore empty fields
+            let preciosPayload: Record<string, number> | null = null;
+            if (hasSizes) {
+                const built: Record<string, number> = {};
+                for (const { key } of PIZZA_SIZES) {
+                    const val = formData.precios[key];
+                    if (val !== '' && !isNaN(Number(val))) built[key] = Number(val);
+                }
+                if (Object.keys(built).length > 0) preciosPayload = built;
+            }
+
+            const body: Record<string, any> = {
+                nombre:      formData.nombre,
+                descripcion: formData.descripcion,
+                imagen:      formData.imagen,
+                categoria:   formData.categoria,
+                activo:      formData.activo,
+            };
+
+            if (hasSizes && preciosPayload) {
+                // For pizzas use smallest size as base precio, store all in precios
+                const firstPrice = preciosPayload.mini ?? preciosPayload.chica ?? preciosPayload.mediana ?? preciosPayload.grande ?? Number(formData.precio);
+                body.precio  = firstPrice;
+                body.precios = JSON.stringify(preciosPayload);
+            } else {
+                body.precio  = Number(formData.precio);
+                body.precios = null;
+            }
 
             const res = await fetch(url, {
                 method,
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
+                    'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    nombre: formData.nombre,
-                    descripcion: formData.descripcion,
-                    precio: Number(formData.precio),
-                    imagen: formData.imagen,
-                    categoria: formData.categoria,
-                    activo: formData.activo
-                })
+                body: JSON.stringify(body)
             });
 
             if (res.ok) {
@@ -128,6 +173,20 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         } finally {
             setIsSaving(false);
         }
+    };
+
+    // Helper: display price summary in list
+    const getPriceDisplay = (product: Pizza) => {
+        if (product.precios) {
+            const raw = typeof product.precios === 'string' ? JSON.parse(product.precios) : product.precios;
+            const vals = Object.values(raw as Record<string, number>).filter(v => v > 0);
+            if (vals.length > 0) {
+                const min = Math.min(...vals);
+                const max = Math.max(...vals);
+                return min === max ? `$${min}` : `$${min} – $${max}`;
+            }
+        }
+        return `$${product.precio}`;
     };
 
     return (
@@ -150,7 +209,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                             className="w-full pl-12 pr-4 py-3 bg-slate-50 text-slate-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-red-600/20 font-bold text-sm transition-all placeholder:text-slate-400"
                         />
                     </div>
-                    <button 
+                    <button
                         onClick={openCreateModal}
                         className="bg-red-600 text-white p-3 rounded-2xl hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all active:scale-95"
                     >
@@ -211,7 +270,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                             <span className="text-[10px] font-black uppercase tracking-widest text-red-600 opacity-60">{product.categoria}</span>
                                         </div>
                                         <p className="font-black text-xl italic text-slate-900 uppercase leading-none mb-1">{product.nombre}</p>
-                                        <p className="text-lg font-black text-slate-400 italic leading-none">${product.precio}</p>
+                                        <p className="text-lg font-black text-slate-400 italic leading-none">{getPriceDisplay(product)}</p>
                                     </div>
                                 </div>
 
@@ -231,13 +290,13 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                        <button 
+                                        <button
                                             onClick={() => openEditModal(product)}
                                             className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-950 transition-all"
                                         >
                                             <Edit2 size={20} />
                                         </button>
-                                        <button 
+                                        <button
                                             onClick={() => handleDelete(product.id)}
                                             disabled={isDeleting === product.id}
                                             className="p-3 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all disabled:opacity-50"
@@ -303,20 +362,51 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                             placeholder="Ej. Pizza Pepperoni"
                                         />
                                     </div>
-                                    <div className="grid grid-cols-2 gap-4">
+
+                                    <div>
+                                        <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Categoría</label>
+                                        <select
+                                            value={formData.categoria}
+                                            onChange={e => setFormData({ ...formData, categoria: e.target.value })}
+                                            className="w-full p-4 bg-slate-50 rounded-2xl border-none text-slate-900 font-bold focus:ring-2 focus:ring-capriccio-gold outline-none"
+                                        >
+                                            <option value="🍕 Pizzas">🍕 Pizzas</option>
+                                            <option value="🍔 Hamburguesas">🍔 Hamburguesas</option>
+                                            <option value="Snacks & Más">Snacks & Más</option>
+                                            <option value="🥤 Bebidas">🥤 Bebidas</option>
+                                        </select>
+                                    </div>
+
+                                    {/* PRICES — sizes for pizzas, single price for others */}
+                                    {hasSizes ? (
                                         <div>
-                                            <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Categoría</label>
-                                            <select
-                                                value={formData.categoria}
-                                                onChange={e => setFormData({ ...formData, categoria: e.target.value })}
-                                                className="w-full p-4 bg-slate-50 rounded-2xl border-none text-slate-900 font-bold focus:ring-2 focus:ring-capriccio-gold outline-none"
-                                            >
-                                                <option value="🍕 Pizzas">Pizzas</option>
-                                                <option value="🍔 Hamburguesas">Hamburguesas</option>
-                                                <option value="Snacks & Más">Snacks & Más</option>
-                                                <option value="🥤 Bebidas">Bebidas</option>
-                                            </select>
+                                            <label className="block text-xs font-black uppercase text-slate-500 mb-3 tracking-wider">
+                                                Precios por Tamaño ($)
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {PIZZA_SIZES.map(({ key, label }) => (
+                                                    <div key={key} className="relative">
+                                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest text-slate-400 pointer-events-none">
+                                                            {label}
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.01"
+                                                            value={formData.precios[key]}
+                                                            onChange={e => setFormData({
+                                                                ...formData,
+                                                                precios: { ...formData.precios, [key]: e.target.value }
+                                                            })}
+                                                            className="w-full pl-16 pr-4 py-4 bg-slate-50 rounded-2xl border-none text-slate-900 font-black focus:ring-2 focus:ring-capriccio-gold outline-none"
+                                                            placeholder="0"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 font-bold mt-2 italic">Deja en blanco los tamaños que no apliquen.</p>
                                         </div>
+                                    ) : (
                                         <div>
                                             <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Precio ($)</label>
                                             <input
@@ -330,7 +420,8 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                                 placeholder="0.00"
                                             />
                                         </div>
-                                    </div>
+                                    )}
+
                                     <div>
                                         <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Imagen (Archivo)</label>
                                         <div className="flex flex-col gap-2">
@@ -354,6 +445,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                             />
                                         </div>
                                     </div>
+
                                     <div>
                                         <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Ingredientes / Descripción</label>
                                         <textarea

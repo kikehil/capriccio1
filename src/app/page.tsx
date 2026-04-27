@@ -31,6 +31,7 @@ export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
+  const [cartForceOpen, setCartForceOpen] = useState(false);
   const [horarioModal, setHorarioModal] = useState<'antes' | 'despues' | null>(null);
 
   const getHoraMexico = () => {
@@ -158,6 +159,19 @@ export default function Home() {
     showNotification("¡Promo agregada al carrito!");
   };
 
+  const updateCartQuantity = (cartId: string, delta: number) => {
+    setCart(prev => {
+      const item = prev.find(i => i.cartId === cartId);
+      if (!item) return prev;
+      if (item.quantity + delta <= 0) return prev.filter(i => i.cartId !== cartId);
+      return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + delta } : i);
+    });
+  };
+
+  const removeFromCart = (cartId: string) => {
+    setCart(prev => prev.filter(i => i.cartId !== cartId));
+  };
+
   const addComplementoToCart = (item: Pizza) => {
     const cartId = `comp-${item.id}`;
     const existing = cart.find(c => c.cartId === cartId);
@@ -203,39 +217,9 @@ export default function Home() {
       telefono_cliente: clienteTelefono || userData.telefono,
     };
 
-    let n8nSuccess = false;
     let cocinaSuccess = false;
 
-    // 1. Transmitir data estructurada al webhook de n8n SIEMPRE
-    const n8nPayload = {
-      cliente_nombre: userData.nombre,
-      cliente_telefono: userData.telefono,
-      direccion_entrega: userData.direccion,
-      referencias: userData.referencias,
-      coordenadas: userData.lat ? `${userData.lat}, ${userData.lng}` : null,
-      metodo_pago: 'Efectivo',
-      total_pagar: totalPrice,
-      lista_articulos: cart.map(item => ({
-        cantidad: item.quantity,
-        producto: item.nombre,
-        tamano: item.size,
-        orilla_extra: item.crust || 'Normal',
-        precio_unitario: item.totalItemPrice
-      }))
-    };
-
-    try {
-      const n8nRes = await fetch('https://n8n-n8n.amv1ou.easypanel.host/webhook/nuevo-pedido', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(n8nPayload)
-      });
-      if (n8nRes.ok) n8nSuccess = true;
-    } catch (error) {
-      console.error("Error enviando a n8n:", error);
-    }
-
-    // 2. Intentar enviar a Cocina Local (Socket.io bridge)
+    // Enviar pedido al API local (server.js envía WhatsApp al cliente y negocio)
     try {
       const response = await fetch(`${API_URL}/api/pedidos`, {
         method: 'POST',
@@ -262,16 +246,9 @@ export default function Home() {
 
     setIsOrdering(false);
 
-    // 3. Evaluar resultados
     if (!cocinaSuccess) {
-      if (n8nSuccess) {
-        // Fallback OK: N8n lo cachó y enviará WhatsApp. Todo bien para el cliente.
-        showNotification("¡Pedido recibido! Te confirmaremos por WhatsApp en breve.", 'success');
-      } else {
-        // Fallback FAIL: Ni local ni n8n.
-        showNotification("No pudimos procesar tu pedido. Intenta nuevamente.", 'error');
-        return; // Salir sin borrar carrito
-      }
+      showNotification("No pudimos procesar tu pedido. Intenta nuevamente.", 'error');
+      return;
     }
 
     setCart([]);
@@ -438,13 +415,21 @@ return (
     <CheckoutModal
       isOpen={isCheckoutOpen}
       onClose={() => setIsCheckoutOpen(false)}
+      onEditCart={() => setCartForceOpen(true)}
       onConfirm={sendToOrderChannel}
       total={cart.reduce((acc, item) => acc + (item.totalItemPrice * item.quantity), 0)}
       cart={cart}
       menu={menu}
       onAddComplemento={addComplementoToCart}
     />
-    <FloatingCart cart={cart} onOrder={handleOpenCheckout} />
+    <FloatingCart
+      cart={cart}
+      onOrder={handleOpenCheckout}
+      forceOpen={cartForceOpen}
+      onForceOpenHandled={() => setCartForceOpen(false)}
+      onUpdateQuantity={updateCartQuantity}
+      onRemoveItem={removeFromCart}
+    />
     <CookieBanner />
     <InstallPrompt />
 

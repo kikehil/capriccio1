@@ -19,6 +19,7 @@ interface UserData {
 interface CheckoutModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onEditCart?: () => void;
     onConfirm: (userData: UserData) => void;
     total: number;
     cart?: CartItem[];
@@ -26,7 +27,7 @@ interface CheckoutModalProps {
     onAddComplemento?: (item: any) => void;
 }
 
-const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, onConfirm, total, cart = [], menu = [], onAddComplemento }) => {
+const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, onEditCart, onConfirm, total, cart = [], menu = [], onAddComplemento }) => {
     const [userData, setUserData] = useState<UserData>({
         nombre: '',
         telefono: '',
@@ -145,7 +146,10 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, onConfir
                                 <div className="bg-black/50 rounded-2xl p-5 mb-8 border border-white/5">
                                     <div className="flex justify-between items-center mb-4">
                                         <h3 className="text-[10px] font-black text-capriccio-gold uppercase tracking-[0.2em]">Resumen de tu Pedido</h3>
-                                        <button onClick={onClose} className="text-[10px] text-gray-400 hover:text-white uppercase font-bold tracking-widest flex items-center gap-1 transition-colors">
+                                        <button
+                                            onClick={() => { onClose(); onEditCart?.(); }}
+                                            className="text-[10px] text-gray-400 hover:text-white uppercase font-bold tracking-widest flex items-center gap-1 transition-colors"
+                                        >
                                             <Edit2 size={10} /> Editar Carrito
                                         </button>
                                     </div>

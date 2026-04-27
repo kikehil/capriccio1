@@ -12,7 +12,7 @@ const withPWA = withPWAInit({
   fallbacks: {
     document: "/offline",
   },
-  customWorkerSrc: "sw-custom.js",
+  customWorkerSrc: "worker",
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [

@@ -1,15 +1,15 @@
 import io from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3081';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ||
     (typeof window !== 'undefined'
         ? (
             (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.port === '3000')
-                ? `${window.location.protocol}//${window.location.hostname}:3001`
+                ? `${window.location.protocol}//${window.location.hostname}:3081`
                 : `${window.location.protocol}//${window.location.hostname}:3081`
         )
-        : 'http://localhost:3001');
+        : 'http://localhost:3081');
 
 // En el cliente, si no hay URL definida, intentamos usar el host actual (incluyendo puerto 3001 cuando corresponde)
 const getSocketUrl = () => {
@@ -22,7 +22,7 @@ const getSocketUrl = () => {
 
         // Caso localhost o desarrollo
         if (host === 'localhost' || host === '127.0.0.1' || port === '3000') {
-            return `${protocol}//${host}:3001`;
+            return `${protocol}//${host}:3081`;
         }
         // Caso IP del VPS
         if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
