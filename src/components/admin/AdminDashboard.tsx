@@ -19,6 +19,7 @@ import { pizzas as initialPizzas, Pizza } from '@/data/menu';
 import BasicOrdersList from './BasicOrdersList';
 import PushManager from './PushManager';
 import POSManager from './POSManager';
+import SettingsModule from './SettingsModule';
 
 import { getSocket, API_URL } from '@/lib/socket';
 
@@ -474,6 +475,9 @@ const AdminDashboard = () => {
         }
         if (activeTab === 'reports') {
             return <ReportsModule />;
+        }
+        if (activeTab === 'settings') {
+            return <SettingsModule />;
         }
 
         return (

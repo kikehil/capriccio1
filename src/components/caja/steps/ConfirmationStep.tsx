@@ -2,8 +2,6 @@
 
 import React, { useState } from 'react';
 import { CheckCircle, AlertCircle } from 'lucide-react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 import { CajaTurno, NewOrderRequest } from '@/data/caja-types';
 import { API_URL } from '@/lib/socket';
 
@@ -13,6 +11,25 @@ interface StepProps {
   turno: CajaTurno;
   onReset: () => void;
   onPrev: () => void;
+}
+
+/* ─── Genera y envía a imprimir un ticket HTML en ventana oculta ─── */
+function printHtmlTicket(html: string) {
+  const win = window.open('', '_blank', 'width=320,height=600,left=-1000,top=-1000');
+  if (!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  // Esperar a que cargue el contenido antes de imprimir
+  win.onload = () => {
+    win.focus();
+    win.print();
+    setTimeout(() => win.close(), 1200);
+  };
+  // Fallback si onload no dispara
+  setTimeout(() => {
+    try { win.focus(); win.print(); setTimeout(() => win.close(), 1200); } catch (_) {}
+  }, 600);
 }
 
 const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPrev }) => {
@@ -30,12 +47,126 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
           0
         );
 
+  /* ─── HTML base para ticket térmico 80mm ─── */
+  const buildTicketHtml = (orderData: any, copy: 'CLIENTE' | 'COCINA') => {
+    const shortId = (orderData.order_id || '')
+      .split('-')[1]?.toUpperCase() || (orderData.order_id || '').slice(-6).toUpperCase();
+
+    const entregaLabel =
+      formData.metodo_entrega === 'sucursal' ? 'COMER EN SUCURSAL' :
+      formData.metodo_entrega === 'para_llevar' ? 'PARA LLEVAR' :
+      formData.metodo_entrega === 'domicilio' ? 'DOMICILIO' : formData.metodo_entrega?.toUpperCase();
+
+    const metodoPagoLabel =
+      formData.payment_method === 'efectivo' ? '💵 EFECTIVO' :
+      formData.payment_method === 'tarjeta' ? '💳 TARJETA' : '⏳ PAGO EN ENTREGA';
+
+    const cambio = formData.payment_method === 'efectivo' && formData.monto_recibido
+      ? formData.monto_recibido - computedTotal
+      : 0;
+
+    const itemsHtml = (formData.items || []).map((item: any) => `
+      <tr>
+        <td>${item.cantidad}x ${item.pizza_nombre}${item.size ? ` <small>(${item.size})</small>` : ''}</td>
+        <td style="text-align:right;white-space:nowrap;">$${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}</td>
+      </tr>
+    `).join('');
+
+    const pagoSection = copy === 'CLIENTE' ? `
+      <tr><td colspan="2"><hr style="border:1px dashed #000;margin:4px 0;"></td></tr>
+      <tr><td><b>TOTAL</b></td><td style="text-align:right;"><b>$${computedTotal.toLocaleString('es-MX')}</b></td></tr>
+      ${formData.payment_method && formData.payment_method !== 'no_pago' ? `
+        <tr><td>Pago</td><td style="text-align:right;">${metodoPagoLabel}</td></tr>
+        ${formData.payment_method === 'efectivo' && formData.monto_recibido ? `
+          <tr><td>Recibido</td><td style="text-align:right;">$${Number(formData.monto_recibido).toLocaleString('es-MX')}</td></tr>
+          <tr><td><b>Cambio</b></td><td style="text-align:right;"><b>$${cambio.toLocaleString('es-MX')}</b></td></tr>
+        ` : ''}
+      ` : `<tr><td colspan="2" style="text-align:center;">⏳ Pago al recibir</td></tr>`}
+    ` : `
+      <tr><td colspan="2"><hr style="border:1px dashed #000;margin:4px 0;"></td></tr>
+      <tr><td><b>TOTAL</b></td><td style="text-align:right;"><b>$${computedTotal.toLocaleString('es-MX')}</b></td></tr>
+    `;
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page { margin: 3mm; size: 80mm auto; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      width: 72mm;
+      margin: 0 auto;
+      color: #000;
+    }
+    .center { text-align: center; }
+    .bold { font-weight: bold; }
+    .big { font-size: 14px; }
+    .copy-label {
+      text-align: center;
+      border: 2px solid #000;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-bottom: 4px;
+      display: inline-block;
+    }
+    hr { border: none; border-top: 1px dashed #000; margin: 5px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 1px 0; vertical-align: top; }
+    .section-title { font-weight: bold; border-bottom: 1px solid #000; margin-top: 5px; margin-bottom: 3px; }
+  </style>
+</head>
+<body>
+  <div class="center bold big">CAPRICCIO PIZZERÍA</div>
+  <div class="center" style="font-size:9px;">Pánuco, Ver.</div>
+  <hr>
+  <div class="center"><span class="copy-label">COPIA: ${copy}</span></div>
+  <div class="center bold" style="font-size:13px;">ORDEN #${shortId}</div>
+  <div class="center" style="font-size:9px;">${new Date().toLocaleString('es-MX')}</div>
+  <hr>
+
+  <div class="section-title">CLIENTE</div>
+  <table>
+    <tr><td><b>${formData.cliente_nombre || 'Sin nombre'}</b></td></tr>
+    ${formData.telefono ? `<tr><td>Tel: ${formData.telefono}</td></tr>` : ''}
+    ${formData.direccion ? `<tr><td>Dir: ${formData.direccion}</td></tr>` : ''}
+    ${formData.referencias ? `<tr><td>Ref: ${formData.referencias}</td></tr>` : ''}
+  </table>
+
+  <div class="section-title">ENTREGA: ${entregaLabel}</div>
+
+  <div class="section-title">ARTÍCULOS</div>
+  <table>
+    ${itemsHtml}
+    ${pagoSection}
+  </table>
+
+  <hr>
+  <div class="center bold" style="margin-top:6px;">¡GRACIAS POR SU PREFERENCIA!</div>
+  <div class="center" style="font-size:9px;">capricciopizzeria.com</div>
+  <br><br><br>
+</body>
+</html>`;
+  };
+
+  /* ─── Imprime 2 tickets: CLIENTE + COCINA ─── */
+  const printBothTickets = (orderData: any) => {
+    // Ticket 1: CLIENTE
+    printHtmlTicket(buildTicketHtml(orderData, 'CLIENTE'));
+    // Ticket 2: COCINA (con pequeño delay para no saturar la cola de impresión)
+    setTimeout(() => {
+      printHtmlTicket(buildTicketHtml(orderData, 'COCINA'));
+    }, 1800);
+  };
+
   const handleConfirm = async () => {
     setLoading(true);
     setError('');
 
     try {
-      // Preparar datos
       const payload: NewOrderRequest = {
         cliente_nombre: formData.cliente_nombre,
         telefono: formData.telefono,
@@ -51,7 +182,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 
       console.log('📤 Enviando pedido:', payload);
 
-      // Enviar al API
       const response = await fetch(`${API_URL}/api/caja/pedidos`, {
         method: 'POST',
         headers: {
@@ -66,7 +196,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       if (!response.ok) {
         const errorData = await response.text();
         console.error('❌ Error del servidor:', errorData);
-        // Token expirado: limpiar y recargar para re-autenticar
         if (response.status === 401 || response.status === 403) {
           localStorage.removeItem('capriccio_token_caja');
           setTimeout(() => window.location.reload(), 1500);
@@ -81,10 +210,9 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       setOrderId(result.order_id || result.id || 'SIN_ID');
       setSuccess(true);
 
-      // Generar y descargar recibo
-      if (formData.metodo_entrega === 'sucursal' || formData.metodo_entrega === 'para_llevar') {
-        generateAndPrintReceipt(result);
-      }
+      // Imprimir 2 tickets automáticamente para todos los tipos de entrega
+      printBothTickets(result);
+
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('❌ Error:', errorMsg);
@@ -92,108 +220,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
     } finally {
       setLoading(false);
     }
-  };
-
-  const generateAndPrintReceipt = (orderData: any) => {
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: [80, 200], // Tamaño térmico 80mm
-    });
-
-    // Configurar fuentes
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text('CAPRICCIO PIZZERÍA', 40, 10, { align: 'center' });
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Orden: ${orderData.order_id}`, 40, 18, { align: 'center' });
-    doc.text(`${new Date().toLocaleString('es-CL')}`, 40, 23, { align: 'center' });
-
-    let yPos = 32;
-
-    // Cliente
-    if (formData.cliente_nombre) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('CLIENTE:', 5, yPos);
-      yPos += 5;
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.text(formData.cliente_nombre, 5, yPos);
-      yPos += 4;
-      doc.text(formData.telefono, 5, yPos);
-      yPos += 6;
-    }
-
-    // Items
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text('ITEMS:', 5, yPos);
-    yPos += 4;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-
-    formData.items.forEach((item: any) => {
-      const line = `${item.cantidad}x ${item.pizza_nombre}`;
-      doc.text(line, 5, yPos);
-      yPos += 3;
-      doc.text(`  $${(item.precio_unitario * item.cantidad).toLocaleString()}`, 50, yPos);
-      yPos += 4;
-    });
-
-    // Separador
-    yPos += 2;
-    doc.setDrawColor(0);
-    doc.line(5, yPos, 75, yPos);
-    yPos += 4;
-
-    // Total
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('TOTAL:', 5, yPos);
-    doc.text(`$${computedTotal.toLocaleString()}`, 50, yPos);
-    yPos += 8;
-
-    // Pago
-    if (formData.payment_method && formData.payment_method !== 'no_pago') {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      const methodText =
-        formData.payment_method === 'efectivo' ? 'EFECTIVO' : 'TARJETA';
-      doc.text(`Pago: ${methodText}`, 5, yPos);
-      yPos += 4;
-
-      if (formData.payment_method === 'efectivo' && formData.monto_recibido) {
-        const cambio = formData.monto_recibido - computedTotal;
-        doc.text(`Recibido: $${formData.monto_recibido.toLocaleString()}`, 5, yPos);
-        yPos += 4;
-        doc.text(`Cambio: $${cambio.toLocaleString()}`, 5, yPos);
-        yPos += 4;
-      }
-    }
-
-    // Nota de entrega
-    yPos += 4;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    const deliveryText =
-      formData.metodo_entrega === 'sucursal'
-        ? `COMER EN SUCURSAL`
-        : `PARA LLEVAR`;
-    doc.text(`TIPO: ${deliveryText}`, 5, yPos);
-
-    // Gracias
-    yPos += 12;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text('¡GRACIAS POR SU COMPRA!', 40, yPos, { align: 'center' });
-
-    // Descargar como PDF
-    doc.save(`recibo-${orderData.order_id}.pdf`);
   };
 
   if (success) {
@@ -207,11 +233,9 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 
         <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
           <p className="text-blue-800 font-semibold">✅ El pedido ha sido enviado a cocina</p>
-          {(formData.metodo_entrega === 'sucursal' || formData.metodo_entrega === 'para_llevar') && (
-            <p className="text-blue-700 text-sm mt-2">
-              Se imprimió automáticamente el recibo. Guárdalo para entregarlo al cliente.
-            </p>
-          )}
+          <p className="text-blue-700 text-sm mt-2">
+            🖨️ Se están imprimiendo 2 tickets: uno para el cliente y uno para cocina.
+          </p>
         </div>
 
         <button
@@ -238,99 +262,69 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       )}
 
       {/* TICKET VISUAL */}
-      <div className="mb-6 bg-gradient-to-br from-gray-50 to-white border-2 border-gray-300 rounded-lg p-6 shadow-md"  style={{ fontFamily: 'monospace' }}>
+      <div className="mb-6 bg-gradient-to-br from-gray-50 to-white border-2 border-gray-300 rounded-lg p-6 shadow-md" style={{ fontFamily: 'monospace' }}>
 
-        {/* ENCABEZADO TICKET */}
+        {/* ENCABEZADO */}
         <div className="text-center mb-4 pb-4 border-b-2 border-gray-400">
           <h3 className="text-lg font-bold">🍕 CAPRICCIO PIZZERÍA 🍕</h3>
-          <p className="text-xs text-gray-600 mt-1">{new Date().toLocaleString('es-CL')}</p>
+          <p className="text-xs text-gray-600 mt-1">{new Date().toLocaleString('es-MX')}</p>
         </div>
 
         <div className="space-y-3">
-        {/* CLIENTE */}
-        <div className="bg-white p-3 rounded border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3">Cliente</h3>
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-gray-600">Nombre:</span>{' '}
-              <span className="font-semibold text-gray-900">{formData.cliente_nombre}</span>
-            </p>
-            <p>
-              <span className="text-gray-600">Teléfono:</span>{' '}
-              <span className="font-semibold text-gray-900">{formData.telefono}</span>
-            </p>
-            {formData.direccion && (
-              <p>
-                <span className="text-gray-600">Dirección:</span>{' '}
-                <span className="font-semibold text-gray-900">{formData.direccion}</span>
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* PEDIDO */}
-        <div className="bg-white p-3 rounded border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3">Pedido</h3>
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-gray-600">Origen:</span>{' '}
-              <span className="font-semibold text-gray-900 capitalize">{formData.order_origin}</span>
-            </p>
-            <p>
-              <span className="text-gray-600">Entrega:</span>{' '}
-              <span className="font-semibold text-gray-900 capitalize">{formData.metodo_entrega}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* ITEMS */}
-        <div className="bg-white p-3 rounded border border-gray-200">
-          <h3 className="font-bold text-gray-800 mb-3">Items ({formData.items.length})</h3>
-          <div className="space-y-2 text-sm">
-            {formData.items.map((item: any) => (
-              <div key={item.pizza_nombre} className="flex justify-between text-gray-900">
-                <span>
-                  {item.cantidad}x {item.pizza_nombre}
-                </span>
-                <span className="font-semibold">${(item.precio_unitario * item.cantidad).toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* PAGO */}
-        <div className="bg-white p-3 rounded border border-gray-200 mt-3 pt-3 border-t-2">
-          <h3 className="font-bold text-gray-800 mb-3">Pago</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between font-bold text-lg">
-              <span>Total:</span>
-              <span className="text-red-600">${computedTotal.toLocaleString()}</span>
+          {/* CLIENTE */}
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h3 className="font-bold text-gray-800 mb-3">Cliente</h3>
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-600">Nombre:</span>{' '}<span className="font-semibold text-gray-900">{formData.cliente_nombre}</span></p>
+              <p><span className="text-gray-600">Teléfono:</span>{' '}<span className="font-semibold text-gray-900">{formData.telefono}</span></p>
+              {formData.direccion && <p><span className="text-gray-600">Dirección:</span>{' '}<span className="font-semibold text-gray-900">{formData.direccion}</span></p>}
             </div>
-            {formData.payment_method && formData.payment_method !== 'no_pago' && (
-              <>
-                <p>
-                  <span className="text-gray-600">Método:</span>{' '}
-                  <span className="font-semibold text-gray-900 capitalize">{formData.payment_method}</span>
-                </p>
-                {formData.payment_method === 'efectivo' && (
-                  <>
-                    <p>
-                      <span className="text-gray-600">Recibido:</span>{' '}
-                      <span className="font-semibold text-gray-900">${formData.monto_recibido?.toLocaleString()}</span>
-                    </p>
-                    <p>
-                      <span className="text-gray-600">Cambio:</span>{' '}
-                      <span className="font-semibold text-green-600">
-                        ${(formData.monto_recibido - computedTotal).toLocaleString()}
-                      </span>
-                    </p>
-                  </>
-                )}
-              </>
-            )}
+          </div>
+
+          {/* PEDIDO */}
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h3 className="font-bold text-gray-800 mb-3">Pedido</h3>
+            <div className="space-y-1 text-sm">
+              <p><span className="text-gray-600">Origen:</span>{' '}<span className="font-semibold text-gray-900 capitalize">{formData.order_origin}</span></p>
+              <p><span className="text-gray-600">Entrega:</span>{' '}<span className="font-semibold text-gray-900 capitalize">{formData.metodo_entrega}</span></p>
+            </div>
+          </div>
+
+          {/* ITEMS */}
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h3 className="font-bold text-gray-800 mb-3">Items ({formData.items.length})</h3>
+            <div className="space-y-2 text-sm">
+              {formData.items.map((item: any, idx: number) => (
+                <div key={idx} className="flex justify-between text-gray-900">
+                  <span>{item.cantidad}x {item.pizza_nombre}{item.size ? ` (${item.size})` : ''}</span>
+                  <span className="font-semibold">${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* PAGO */}
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h3 className="font-bold text-gray-800 mb-3">Pago</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between font-bold text-lg">
+                <span>Total:</span>
+                <span className="text-red-600">${computedTotal.toLocaleString('es-MX')}</span>
+              </div>
+              {formData.payment_method && formData.payment_method !== 'no_pago' && (
+                <>
+                  <p><span className="text-gray-600">Método:</span>{' '}<span className="font-semibold text-gray-900 capitalize">{formData.payment_method}</span></p>
+                  {formData.payment_method === 'efectivo' && formData.monto_recibido && (
+                    <>
+                      <p><span className="text-gray-600">Recibido:</span>{' '}<span className="font-semibold">${Number(formData.monto_recibido).toLocaleString('es-MX')}</span></p>
+                      <p><span className="text-gray-600">Cambio:</span>{' '}<span className="font-semibold text-green-600">${(formData.monto_recibido - computedTotal).toLocaleString('es-MX')}</span></p>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       </div>
 
       {/* BUTTONS */}

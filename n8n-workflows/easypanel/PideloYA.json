@@ -1,0 +1,124 @@
+{
+  "updatedAt": "2026-02-21T01:47:19.000Z",
+  "createdAt": "2026-02-21T01:46:17.606Z",
+  "id": "RuWPLhZ58AatOSx7",
+  "name": "PideloYA",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pideloya",
+        "responseMode": "lastNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        144,
+        0
+      ],
+      "id": "4ac2c849-6c9f-4c38-b606-abbbeec73bf3",
+      "name": "Webhook",
+      "webhookId": "342ed360-d674-4cc0-a403-d8aa1fd07968"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  { json: { number: \"528331556838\" } },\n  { json: { number: \"528333009456\" } }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        0
+      ],
+      "id": "40b46729-728d-4ed6-ad17-70d123beaeb6",
+      "name": "number"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/agenda\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "=BF48A3271837-49CA-98AF-A3DDF4D6B134"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{$json.number}}\",\n  \"text\": \"🚨 EQUIPO DE TI\\n\\nEl usuario {{$node['Webhook'].json.body.usuario || 'No identificado'}} requiere tu apoyo en Sala de Juntas.\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        640,
+        16
+      ],
+      "id": "c9935591-9a0d-4d99-8f58-58c70fe90a7f",
+      "name": "HTTP Request",
+      "retryOnFail": false,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "number": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "091665d9-c119-4691-a4f0-47bd996e62da",
+  "versionCounter": 71,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-02-21T01:46:17.615Z",
+      "createdAt": "2026-02-21T01:46:17.615Z",
+      "role": "workflow:owner",
+      "workflowId": "RuWPLhZ58AatOSx7",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}

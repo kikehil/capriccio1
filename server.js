@@ -65,6 +65,43 @@ const kitchenOrAdmin = authorize(['admin', 'cocina']);
 const deliveryOrAdmin = authorize(['admin', 'repartidor']);
 const staffOnly = authorize(['admin', 'cocina', 'repartidor', 'caja', 'responsable', 'marketing']);
 
+// --- NEGOCIO CONFIG HELPER ---
+async function getConfig(key, defaultValue = '') {
+    try {
+        const r = await db.query('SELECT value FROM negocio_config WHERE key = $1', [key]);
+        return r.rows.length ? r.rows[0].value : defaultValue;
+    } catch { return defaultValue; }
+}
+
+// GET /api/config
+app.get('/api/config', adminOnly, async (req, res) => {
+    try {
+        const r = await db.query('SELECT key, value FROM negocio_config');
+        const config = {};
+        r.rows.forEach(row => { config[row.key] = row.value; });
+        res.json(config);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PATCH /api/config
+app.patch('/api/config', adminOnly, async (req, res) => {
+    try {
+        const entries = Object.entries(req.body);
+        for (const [key, value] of entries) {
+            await db.query(`
+                INSERT INTO negocio_config (key, value, updated_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+            `, [key, value]);
+        }
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- AUTH ENDPOINTS ---
 
 // Endpoint para recuperar datos del usuario autenticado desde el token
@@ -497,25 +534,10 @@ app.post('/api/pedidos', async (req, res) => {
         const modoEntrega = metodo_entrega === 'domicilio' ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}${referencias ? `\n📝 Ref: ${referencias}` : ''}` : `🏪 *Recoger en sucursal*`;
         const msgNegocio = `🔔 *NUEVO PEDIDO #${shortId}*\n🌐 *Origen: Página Web*\n\n👤 ${cliente_nombre}\n📞 ${telefono}\n${modoEntrega}\n\n*Artículos:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*`;
 
-        const EVOLUTION_URL = 'https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizza';
-        const EVOLUTION_KEY = 'DF0ACCC20D48-4293-A570-A30D6C532231';
-        const NEGOCIO_NUM = '5218181190257@s.whatsapp.net';
-
-        const sendWA = async (number, text) => {
-            try {
-                await fetch(EVOLUTION_URL, {
-                    method: 'POST',
-                    headers: { 'apikey': EVOLUTION_KEY, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ number, text })
-                });
-            } catch (e) {
-                console.error('⚠️ WA send error:', e.message);
-            }
-        };
-
+        // Enviar WhatsApp al cliente y al negocio
         const clienteNum = (telefono_cliente || telefono || '').replace(/\D/g, '');
-        if (clienteNum) sendWA(`${clienteNum}@s.whatsapp.net`, msgCliente);
-        sendWA(NEGOCIO_NUM, msgNegocio);
+        if (clienteNum) sendWA(clienteNum, msgCliente, '[Web-Cliente]');
+        getWANegocio().then(num => sendWA(num, msgNegocio, '[Web-Negocio]'));
     } catch (err) {
         await connection.rollback();
         console.error("❌ [PEDIDO] Error:", err.message);
@@ -1015,6 +1037,15 @@ io.on('connection', (socket) => {
         `);
         console.log('✅ Tabla push_subscriptions lista');
 
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS negocio_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('✅ Tabla negocio_config lista');
+
         // Verificar columnas en pedidos
         // (En PG es mejor usar setup-pg.js para esto, pero mantenemos una versión compatible aquí)
         console.log('✅ Verificación de tablas completada');
@@ -1096,7 +1127,7 @@ function generarCodigo(len = 6) {
 }
 
 // Helper: POST con https nativo — rechaza si status >= 400
-function httpPost(url, body, extraHeaders = {}) {
+function httpPost(url, body, extraHeaders = {}, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
         const parsed = new URL(url);
         const isHttps = parsed.protocol === 'https:';
@@ -1107,7 +1138,8 @@ function httpPost(url, body, extraHeaders = {}) {
             port: parsed.port || (isHttps ? 443 : 80),
             path: parsed.pathname + parsed.search,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...extraHeaders }
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...extraHeaders },
+            timeout: timeoutMs
         };
         const req = lib.request(options, (res) => {
             let data = '';
@@ -1120,10 +1152,41 @@ function httpPost(url, body, extraHeaders = {}) {
                 }
             });
         });
+        req.on('timeout', () => { req.destroy(new Error(`Timeout después de ${timeoutMs}ms`)); });
         req.on('error', reject);
         req.write(payload);
         req.end();
     });
+}
+
+// ─── Helper centralizado WhatsApp (Evolution API local en puerto 8080) ───────
+const WA_EVOLUTION_URL  = 'http://76.13.24.103:8080';
+const WA_EVOLUTION_KEY  = 'DF0ACCC20D48-4293-A570-A30D6C532231';
+const WA_INSTANCE       = 'pizza';
+const WA_NEGOCIO_DEFAULT = '5218181190257';
+async function getWANegocio() {
+    const num = await getConfig('whatsapp_negocio', WA_NEGOCIO_DEFAULT);
+    return `${num}@s.whatsapp.net`;
+}
+
+async function sendWA(numero, texto, tag = '') {
+    let numLimpio = String(numero).replace(/\D/g, '');
+    if (!numLimpio) { console.warn(`[WA${tag}] Número inválido:`, numero); return; }
+    // Normalizar a formato México: 10 dígitos → 521XXXXXXXXXX
+    if (numLimpio.length === 10) numLimpio = '521' + numLimpio;
+    else if (numLimpio.startsWith('52') && numLimpio.length === 12) numLimpio = '521' + numLimpio.slice(2);
+    const destino = numLimpio.includes('@') ? numLimpio : `${numLimpio}@s.whatsapp.net`;
+    try {
+        const r = await httpPost(
+            `${WA_EVOLUTION_URL}/message/sendText/${WA_INSTANCE}`,
+            { number: destino, textMessage: { text: texto } },
+            { apikey: WA_EVOLUTION_KEY },
+            12000
+        );
+        console.log(`[WA${tag}] ✅ Enviado a ${destino} — HTTP ${r.status}`);
+    } catch (e) {
+        console.error(`[WA${tag}] ❌ Fallo al enviar a ${destino}: ${e.message}`);
+    }
 }
 
 // Helper: enviar código WhatsApp
@@ -1658,52 +1721,30 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
             total: total
         });
 
-        // Notificar al cliente por WhatsApp (mismo webhook n8n que el sistema de pedidos en línea)
-        // Solo si hay número de teléfono del cliente
-        if (telefono) {
-            const metodoPagoLabel = payment_method === 'tarjeta' ? 'Tarjeta' : payment_method === 'no_pago' ? 'Pago en entrega' : 'Efectivo';
-            const n8nPayload = {
-                cliente_nombre: cliente_nombre || 'Cliente',
-                cliente_telefono: telefono,
-                direccion_entrega: direccion || (metodo_entrega === 'sucursal' || metodo_entrega === 'para_llevar' ? 'Recoger en sucursal' : ''),
-                referencias: null,
-                coordenadas: null,
-                metodo_pago: metodoPagoLabel,
-                total_pagar: total,
-                lista_articulos: items.map(i => ({
-                    cantidad: i.quantity || i.cantidad || 1,
-                    producto: i.nombre || i.pizza_nombre || '',
-                    tamano: i.size || i.tamano || '',
-                    orilla_extra: i.crust || 'Normal',
-                    precio_unitario: i.totalItemPrice || i.precio_unitario || 0
-                }))
-            };
-            httpPost('https://n8n-n8n.amv1ou.easypanel.host/webhook/nuevo-pedido', n8nPayload)
-                .then(() => console.log(`[Caja] ✅ WhatsApp enviado a ${telefono}`))
-                .catch(e => console.warn(`[Caja] ⚠️  WhatsApp no enviado: ${e.message}`));
-        }
-
-        // 📲 Notificar al NEGOCIO por WhatsApp (Evolution API)
+        // 📲 WhatsApp al CLIENTE y al NEGOCIO (Evolution API directa)
         {
             const shortIdCaja = order_id.split('-')[1]?.toUpperCase() || order_id.slice(-6).toUpperCase();
             const origenLabel =
                 order_origin === 'whatsapp' || order_origin === 'bot' ? '💬 WhatsApp Bot' :
-                order_origin === 'web' ? '🌐 Página Web' :
-                '🏪 Punto de Venta';
+                order_origin === 'web' ? '🌐 Página Web' : '🏪 Punto de Venta';
             const modoEntregaCaja = metodo_entrega === 'domicilio'
                 ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}`
-                : `🏪 *Recoger en sucursal*`;
+                : metodo_entrega === 'para_llevar' ? '🏃 *Para llevar*' : '🏪 *Recoger en sucursal*';
             const resumenCaja = items.map(i =>
                 `• ${i.cantidad || i.quantity}x ${i.pizza_nombre || i.nombre}${i.size ? ` (${i.size})` : ''} — $${(i.precio_unitario || i.totalItemPrice) * (i.cantidad || i.quantity)}`
             ).join('\n');
             const metodoPagoCaja = payment_method === 'tarjeta' ? '💳 Tarjeta' : payment_method === 'no_pago' ? '⏳ Pago en entrega' : '💵 Efectivo';
-            const msgNegocioCaja = `🔔 *NUEVO PEDIDO #${shortIdCaja}*\n${origenLabel}\n\n👤 ${cliente_nombre}\n📞 ${telefono || 'Sin teléfono'}\n${modoEntregaCaja}\n\n*Artículos:*\n${resumenCaja}\n\n💰 *Total: $${total}*\n${metodoPagoCaja}`;
 
-            fetch('https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizza', {
-                method: 'POST',
-                headers: { 'apikey': 'DF0ACCC20D48-4293-A570-A30D6C532231', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ number: '5218181190257@s.whatsapp.net', text: msgNegocioCaja })
-            }).catch(e => console.warn('[Caja] ⚠️ WA negocio no enviado:', e.message));
+            // Mensaje para el NEGOCIO
+            const msgNegocioCaja = `🔔 *NUEVO PEDIDO #${shortIdCaja}*\n${origenLabel}\n\n👤 ${cliente_nombre}\n📞 ${telefono || 'Sin teléfono'}\n${modoEntregaCaja}\n\n*Artículos:*\n${resumenCaja}\n\n💰 *Total: $${total}*\n${metodoPagoCaja}`;
+            getWANegocio().then(num => sendWA(num, msgNegocioCaja, '[Caja-Negocio]'));
+
+            // Mensaje para el CLIENTE (solo si tiene teléfono)
+            if (telefono) {
+                const tiempoEstCaja = metodo_entrega === 'domicilio' ? '~40 minutos' : '20-25 minutos';
+                const msgClienteCaja = `🍕 *¡Hola ${cliente_nombre || 'Cliente'}!*\n\nTu pedido *#${shortIdCaja}* fue recibido en caja.\n\n*Resumen:*\n${resumenCaja}\n\n💰 *Total: $${total}*\n${metodoPagoCaja}\n⏱ Tiempo estimado: ${tiempoEstCaja}\n\n¡Gracias por tu preferencia! 🙌`;
+                sendWA(telefono, msgClienteCaja, '[Caja-Cliente]');
+            }
         }
     } catch (e) {
         console.error('Error al crear pedido en caja:', e);

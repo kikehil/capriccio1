@@ -1,0 +1,92 @@
+{
+  "updatedAt": "2026-03-02T20:20:53.000Z",
+  "createdAt": "2026-03-02T18:35:51.554Z",
+  "id": "FK8xtzN79UP9hO3c",
+  "name": "My workflow 2",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c4bc6889-0e58-445b-870d-a0f57932c186",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDLZJ8h2d3mEbVDdVxVIr7d35XFjeqaAoo",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Confirma si puedes leer este mensaje para validar mi cuenta de pago.\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "84fe9bb1-2e77-4750-bd83-462ac9bdcef8",
+      "name": "HTTP Request"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "2648b4ec-d1eb-456d-93fa-36b81e1669b3",
+  "versionCounter": 7,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-02T18:35:51.558Z",
+      "createdAt": "2026-03-02T18:35:51.558Z",
+      "role": "workflow:owner",
+      "workflowId": "FK8xtzN79UP9hO3c",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}

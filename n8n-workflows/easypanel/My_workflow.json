@@ -1,0 +1,133 @@
+{
+  "updatedAt": "2026-02-02T17:38:09.000Z",
+  "createdAt": "2026-01-06T23:19:11.986Z",
+  "id": "D1CPHJAmReRFQl2e",
+  "name": "My workflow",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "telefono"
+            },
+            {
+              "name": "email"
+            },
+            {
+              "name": "id"
+            },
+            {
+              "name": "numpreg"
+            },
+            {
+              "name": "estado"
+            },
+            {
+              "name": "municipio"
+            },
+            {
+              "name": "superficie"
+            },
+            {
+              "name": "frente"
+            },
+            {
+              "name": "direccion"
+            },
+            {
+              "name": "esquina"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -208,
+        0
+      ],
+      "id": "5e2fcc88-9d37-4913-8b77-ab9990d9627b",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE chatboot\nSET\n    correo = CASE WHEN '{{ $json.email }}' = '' THEN correo ELSE '{{ $json.email }}' END,\n    telefono = CASE WHEN '{{ $json.telefono }}' = '' THEN telefono ELSE '{{ $json.telefono }}' END\nWHERE id LIKE '%{{ $json.id }}%';",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.email, $json.telefono ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1930e14b-a513-4e6f-82d6-677b551318c5",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "5A1o9D0grs5S1IwX",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "telefono": "8334388034",
+          "email": "",
+          "id": "8333009456"
+        }
+      }
+    ]
+  },
+  "versionId": "f1f7d398-bdf1-4d8f-afea-8e709dc97e95",
+  "versionCounter": 11,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-01-06T23:19:11.997Z",
+      "createdAt": "2026-01-06T23:19:11.997Z",
+      "role": "workflow:owner",
+      "workflowId": "D1CPHJAmReRFQl2e",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}

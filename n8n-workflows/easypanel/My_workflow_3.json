@@ -1,0 +1,224 @@
+{
+  "updatedAt": "2026-03-28T01:28:54.000Z",
+  "createdAt": "2026-03-28T01:21:38.576Z",
+  "id": "dRUbv9Q3n4HeHBAU",
+  "name": "My workflow 3",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.tipo }}",
+              "rightValue": "codigo_verificacion",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "7f6b15e9-63e3-4b21-a39c-0562d05e9685"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "57692bb1-8081-41db-bc4a-1bb103f69b68",
+      "name": "¿Es código de verificación?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nconst telefono = body.telefono?.toString().replace(/[^0-9]/g, '') || '';\nconst nombre = body.nombre || 'Cliente';\nconst codigo = body.codigo || '';\n\n// Formatear número para WhatsApp (México: agregar 521 si no lo tiene)\nlet waNumber = telefono;\nif (waNumber.startsWith('52') && waNumber.length === 12) {\n  waNumber = '521' + waNumber.slice(2);\n} else if (waNumber.length === 10) {\n  waNumber = '521' + waNumber;\n}\n\nconst mensaje = `🍕 *Capriccio Pizza*\\n\\n¡Hola ${nombre}! 👋\\n\\nTu código de verificación es:\\n\\n*${codigo}*\\n\\n⏰ Válido por 15 minutos.\\nIngresa este código en la pantalla de verificación para activar tu cuenta.\\n\\n¡Gracias por registrarte! 🎉`;\n\nreturn [{\n  json: {\n    waNumber,\n    telefono,\n    nombre,\n    codigo,\n    mensaje\n  }\n}];"
+      },
+      "id": "9352134d-06ed-4ec3-9734-79a9e0b8d8cf",
+      "name": "Formatear número y mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, enviado: true, numero: $('Formatear número y mensaje').item.json.waNumber }) }}",
+        "options": {}
+      },
+      "id": "0c244a8f-9813-4276-98b2-03f307e58f45",
+      "name": "Responder OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"tipo_invalido\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "2022b51e-0d98-4632-b9f0-4cde55305b1e",
+      "name": "Responder Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "capriccio-2fa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "109857cc-53aa-4a5c-88ed-03dfc63e30a7",
+      "name": "Webhook — Recibe código 2FA",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        80
+      ],
+      "webhookId": "capriccio-2fa"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizza2faRegistro\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "DF0ACCC20D48-4293-A570-A30D6C532231"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $json.waNumber }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.mensaje }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f1e8d8d4-9b59-4d7b-809d-a79cb203079d",
+      "name": "Envia codigo al cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        224,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "¿Es código de verificación?": {
+      "main": [
+        [
+          {
+            "node": "Formatear número y mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear número y mensaje": {
+      "main": [
+        [
+          {
+            "node": "Envia codigo al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook — Recibe código 2FA": {
+      "main": [
+        [
+          {
+            "node": "¿Es código de verificación?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia codigo al cliente": {
+      "main": [
+        [
+          {
+            "node": "Responder OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "4bed691b-7ace-4190-a66e-e65ade90fe34",
+  "versionCounter": 4,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-28T01:21:38.581Z",
+      "createdAt": "2026-03-28T01:21:38.581Z",
+      "role": "workflow:owner",
+      "workflowId": "dRUbv9Q3n4HeHBAU",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,496 @@
+{
+  "updatedAt": "2026-04-23T13:43:32.108Z",
+  "createdAt": "2026-04-23T13:43:32.108Z",
+  "id": "7DfDCoysaHCCNHK6",
+  "name": "Capriccio Bot WhatsApp",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "capriccio-bot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "eee27985-c2e6-49b7-8d4f-4535b86d1705",
+      "name": "Webhook Evolution API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        304
+      ],
+      "webhookId": "67281bac-26e9-4300-a373-9f47161f06e9"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {}
+      },
+      "id": "65bff015-a9e1-44dc-9d41-471c725d90fb",
+      "name": "Responder 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        16,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ─────────────────────────────────────────────\n// EXTRAER DATOS DEL MENSAJE — Evolution API\n// Soporta: wrapper n8n { body: {...} } o payload directo\n// ─────────────────────────────────────────────\nconst raw = $input.first().json;\n\n// n8n con responseMode:responseNode envuelve en { headers, params, query, body, ... }\n// Intentamos ambas capas para ser robustos\nconst p = (raw.body && typeof raw.body === 'object' && !Array.isArray(raw.body))\n  ? raw.body\n  : raw;\n\n// ── Ignorar status updates sin texto (receipts de lectura/entrega)\n// Solo ignorar si NO trae mensaje de texto\nconst msg   = p.message || {};\nconst texto =\n  msg.conversation ||\n  msg.extendedTextMessage?.text ||\n  msg.imageMessage?.caption ||\n  msg.buttonsResponseMessage?.selectedDisplayText ||\n  msg.listResponseMessage?.title || '';\n\n// Si el campo status indica que es solo un receipt Y no hay texto real → ignorar\nconst status = p.status || '';\nif (status && !texto.trim()) {\n  return [{ json: { ignorar: true, razon: 'receipt:' + status } }];\n}\n\n// ── Ignorar mensajes propios (fromMe)\nconst key    = p.key || {};\nconst fromMe = p.fromMe === true || key.fromMe === true;\nif (fromMe) return [{ json: { ignorar: true, razon: 'fromMe' } }];\n\n// ── Sin texto → ignorar\nif (!texto.trim()) return [{ json: { ignorar: true, razon: 'sin_texto' } }];\n\n// ── Obtener remoteJid (número del cliente)\n// En modo LID el remoteJid puede estar en key.remoteJidAlt o participant\nconst remoteJid =\n  p.remoteJid ||\n  key.remoteJid ||\n  key.remoteJidAlt ||\n  p.participant ||\n  '';\n\nconst numero = remoteJid\n  .replace('@s.whatsapp.net', '')\n  .replace('@lid', '')\n  .replace('@g.us', '');\n\nif (!numero) return [{ json: { ignorar: true, razon: 'sin_numero' } }];\n\n// ── Construir remoteJid normalizado para enviar respuesta\nconst remoteJidNorm = remoteJid.includes('@')\n  ? remoteJid\n  : numero + '@s.whatsapp.net';\n\nreturn [{\n  json: {\n    ignorar:   false,\n    numero,\n    remoteJid: remoteJidNorm,\n    nombre:    p.pushName || '',\n    texto:     texto.trim(),\n    timestamp: p.messageTimestamp || Math.floor(Date.now() / 1000)\n  }\n}];\n"
+      },
+      "id": "145cd598-70ca-41cf-b78a-3b60427de4d4",
+      "name": "Extraer datos del mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.ignorar }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "5258c217-9310-43c8-8878-4d239776a4a7",
+      "name": "¿Ignorar mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const numero = $input.first().json.numero;\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.clientes) staticData.clientes = {};\n\nconst cliente = staticData.clientes[numero] || {\n  numero,\n  historial: [],\n  pedido: {\n    productos: [],\n    total: 0,\n    entrega: '',\n    nombre_cliente: '',\n    direccion: '',\n    referencia: '',\n    con_cuanto_paga: 0\n  }\n};\n\nreturn [{\n  json: {\n    ...$input.first().json,\n    historial: cliente.historial,\n    pedido:    cliente.pedido\n  }\n}];\n"
+      },
+      "id": "2f498fee-48f3-461d-8cbb-8e3cdd47bc6c",
+      "name": "Cargar estado del cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { texto, nombre, historial, pedido } = $input.first().json;\n\nconst MENU = `\nPIZZAS (Mini $50 | Chica $65 | Mediana | Grande):\n- Hawaiana: Jamón, piña, mozzarella | Med $150 | Gde $199\n- Fredy's: Aderezo, tocino, pepperoni, salchicha italiana | Med $173 | Gde $212\n- Vegetariana: Cebolla, champiñón, aceituna, elote, tomate, pimiento, piña, aguacate | Med $163 | Gde $199\n- Choriqueso: Doble queso y chorizo | Med $163 | Gde $199\n- Jumper: Pimiento, elote, tocino | Med $163 | Gde $199\n- Napoli: Jamón, salchicha italiana, tocino, champiñón, pimiento verde | Med $167 | Gde $209\n- Speciale: Salchicha, salami, tocino, chorizo | Med $167 | Gde $209\n- Pepperoni: Pepperoni y mozzarella | Med $156 | Gde $199\n- Mister: Pepperoni, champiñón | Med $167 | Gde $209\n- Veneciana: Jamón, aceituna, champiñón, pimiento verde, chorizo, salchichón | Med $173 | Gde $212\n- Al Pastor: Cebolla, piña, jalapeños, carne al pastor | Med $173 | Gde $212\n- Chicken Tenders: Cebolla, jalapeños, tomate, fajita de pollo | Med $173 | Gde $212\n- Azteca: Frijol de base, chorizo, jamón, elote, cebolla, tomate, aguacate, jalapeño | Med $167 | Gde $214\n- Ranchera: Frijoles, bistec, jalapeños, tomate, pimiento verde | Med $167 | Gde $239\n- Mar & Tierra: Camarón, tocino, cebolla, champiñón, pimiento verde | Med $195 | Gde $249\n- Capriccio: Chipotle, fajita de pollo, piña, fajita de res, elote, pimiento verde | Med $195 | Gde $255\n- Boneless (pizza): Boneless, pepperoni, papas gajo, aderezos ranch y queso amarillo | Med $195 | Gde $255\n\nPIZZA JUMBO: $315 fija (rectangular, hasta 4 especialidades)\nEXTRAS DE ORILLA: Orilla rellena de queso | Orilla dedos de queso\nHAMBURGUESAS: Sencilla $78 | Burger $90 | Mega Burger $115 | Arrachera $120 | De Boneless $120\nOTROS: Burritos rellenos $89 (3 pzas) | Papas $48 | Boneless $120\nPROMO Lunes, Miércoles y Viernes: 2 medianas x $245 | 2 grandes x $275\n`;\n\nconst systemPrompt = `Eres el asistente de Capriccio Pizzería por WhatsApp.\nTu misión es tomar pedidos de forma natural, cálida y eficiente — como lo haría el mejor empleado del mostrador.\n\nQUIÉN ERES Y CÓMO HABLAS:\nEres una persona real atendiendo por WhatsApp. Tienes actitud de servicio genuina.\n- Hablas en español mexicano, tuteas al cliente de forma natural\n- Eres cálido, atento, con buen humor sin exagerar\n- Usas emojis cuando la situación lo pide 🍕😄✅🙏\n- Eres breve y directo: 1 a 3 líneas por mensaje, nunca monólogos\n- Si el cliente entra directo con un pedido sin saludar, responde al pedido de una\n- Si el cliente está indeciso, ayúdalo con entusiasmo genuino\n- Nunca suenes como robot, lista de opciones numeradas ni formulario\n\nTONO INFORMAL: \"¡Claro que sí!\" / \"Va, ahorita lo anoto 😄\" / \"Le sale en $X\" / \"Ya quedó 🙌\" / \"¿Le ponemos orilla de queso? Está muy buena 😉\"\n\nPUEDES:\n- Presentar el menú y promociones\n- Registrar el pedido (especialidad, tamaño, cantidad, extras, combinaciones)\n- Preguntar si es domicilio o recoger: \"¿Te lo llevamos a domicilio o pasarías por él?\"\n- Pedir nombre, calle, colonia y referencia (solo si es domicilio)\n- Preguntar con cuánto va a pagar: \"¿Con cuánto pagarías?\"\n- Informar tiempos: domicilio ~45-55 min, recoger ~20 min\n\nNO PUEDES:\n- Hablar de temas ajenos a la pizzería\n- Inventar productos o precios fuera del menú\n- Hacer descuentos no autorizados\n- Dar datos bancarios\n\nFuera de tema: \"Jaja eso sí está fuera de mi área 😄 pero para pizzas soy el indicado, ¿qué se te antoja?\"\nEmpleo: \"Para eso tendrías que comunicarte al local, yo nada más tomo pedidos 😄\"\nTransferencia: \"Para eso te pido que llames al local, ellos te dan los datos 🙏\"\n\nREGLAS PIZZAS COMBINADAS:\n- Mini/Chica/Mediana/Grande: precio = LA MÁS CARA del grupo en ese tamaño\n- JUMBO: siempre $315 fijo, hasta 4 especialidades\n\nTAMAÑOS: \"de 8\" = Chica | \"de 12\" = Mediana | \"de 24\" = Jumbo\n\nFLUJO: saludo → especialidad+tamaño+extras → precio → domicilio/recoger → datos → confirmar total → cerrar\n\nCuando pedido COMPLETAMENTE confirmado, agrega al FINAL (invisible para el cliente):\n##PEDIDO##JSON##\njson: {\"productos\":[{\"nombre\":\"\",\"tamano\":\"\",\"cantidad\":1,\"precio\":0,\"extras\":[],\"combinacion\":[]}],\"total\":0,\"entrega\":\"domicilio|local\",\"nombre_cliente\":\"\",\"telefono\":\"\",\"direccion\":\"\",\"referencia\":\"\",\"con_cuanto_paga\":0}\n`;\n\nconst historialTexto = historial.length > 0\n  ? historial.slice(-20).map(m => `${m.rol === 'cliente' ? 'Cliente' : 'Bot'}: ${m.texto}`).join('\\n')\n  : '(Conversación nueva)';\n\nconst promptFinal = `${systemPrompt}\\n\\nMENÚ:\\n${MENU}\\n\\nPEDIDO ACTUAL:\\n${JSON.stringify(pedido, null, 2)}\\n\\nHISTORIAL:\\n${historialTexto}\\n\\nMensaje del cliente${nombre ? ' (' + nombre + ')' : ''}: ${texto}`;\n\nreturn [{ json: { ...$input.first().json, promptFinal } }];\n"
+      },
+      "id": "ee56d476-95e0-4949-a5b7-f4d76e0e4921",
+      "name": "Armar prompt para Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "AIzaSyDzMFZ6Ns3KE13Pn8CAim19AT17eA7Nw_o"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "4ad68872-f8a7-42bb-bf04-e3a09e7de087",
+      "name": "Gemini API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        896,
+        304
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "BMg4MZ4CdYbxEE2M",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiResponse = $input.first().json;\nconst datosCliente = $('Armar prompt para Gemini').item.json;\n\nconst textoCompleto = geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n\nconst regexPedido = /##PEDIDO##(\\{.*?\\})##/s;\nconst matchPedido = textoCompleto.match(regexPedido);\n\nlet pedidoJSON = null;\nlet mensajeCliente = textoCompleto;\n\nif (matchPedido) {\n  try {\n    pedidoJSON = JSON.parse(matchPedido[1]);\n    pedidoJSON.numero_whatsapp = datosCliente.numero;\n    pedidoJSON.telefono = pedidoJSON.telefono || datosCliente.numero.replace('521','').slice(-10);\n    pedidoJSON.timestamp = new Date().toISOString();\n  } catch (e) {\n    pedidoJSON = null;\n  }\n  mensajeCliente = textoCompleto.replace(regexPedido, '').trim();\n}\n\nreturn [{\n  json: {\n    ...datosCliente,\n    respuestBot:    mensajeCliente,\n    pedidoCerrado:  pedidoJSON !== null,\n    pedidoJSON\n  }\n}];\n"
+      },
+      "id": "a85a23cf-7028-4812-bd67-e435fa84d13f",
+      "name": "Procesar respuesta Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.pedidoCerrado }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "2669aedc-8785-4681-b4e2-867a73216250",
+      "name": "¿Pedido cerrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1344,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://rentame-evolution-api.amv1ou.easypanel.host/chat/sendPresence/pizzarobot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "EA3F9DF2BBF7-472C-A972-7B0E9A55D734"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "ae4f1738-87bb-429a-aeca-cf8b56870c5e",
+      "name": "Simular escribiendo...",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1568,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "fa10f493-e650-499f-b727-4f8f39e414e6",
+      "name": "Esperar 2 segundos",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        224
+      ],
+      "webhookId": "5db53569-e47d-4ca0-9e68-c9c0276af344"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizzarobot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "EA3F9DF2BBF7-472C-A972-7B0E9A55D734"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "43514726-4938-4415-95ff-df52690e474c",
+      "name": "Enviar mensaje al cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2000,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const datos = $('Procesar respuesta Gemini').item.json;\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.clientes) staticData.clientes = {};\n\nconst cliente = staticData.clientes[datos.numero] || {\n  historial: [],\n  pedido: { productos: [], total: 0, entrega: '', nombre_cliente: '', direccion: '', referencia: '', con_cuanto_paga: 0 }\n};\n\ncliente.historial.push({ rol: 'cliente', texto: datos.texto });\ncliente.historial.push({ rol: 'bot',     texto: datos.respuestBot });\n\nif (cliente.historial.length > 30) cliente.historial = cliente.historial.slice(-30);\n\nif (datos.pedidoCerrado && datos.pedidoJSON) {\n  cliente.pedido = datos.pedidoJSON;\n}\n\nstaticData.clientes[datos.numero] = cliente;\n\nreturn [{ json: datos }];\n"
+      },
+      "id": "70de5f57-26e8-4003-bcce-c6b3807ba5cc",
+      "name": "Guardar historial del cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://rentame-evolution-api.amv1ou.easypanel.host/message/sendText/pizzarobot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "EA3F9DF2BBF7-472C-A972-7B0E9A55D734"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "id": "e9622330-6746-4bbb-94d2-ea43d9a2ae10",
+      "name": "Notificar al negocio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1568,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const datos = $('Procesar respuesta Gemini').item.json;\nconst staticData = $getWorkflowStaticData('global');\n\nif (staticData.clientes?.[datos.numero]) {\n  staticData.clientes[datos.numero].pedido = {\n    productos: [], total: 0, entrega: '',\n    nombre_cliente: '', direccion: '', referencia: '', con_cuanto_paga: 0\n  };\n}\n\nreturn [{ json: datos }];\n"
+      },
+      "id": "d15f6005-7b76-4cb8-aa5f-1a98e8a3637b",
+      "name": "Resetear estado del pedido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution API": {
+      "main": [
+        [
+          {
+            "node": "Responder 200 OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extraer datos del mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer datos del mensaje": {
+      "main": [
+        [
+          {
+            "node": "¿Ignorar mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Ignorar mensaje?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Cargar estado del cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar estado del cliente": {
+      "main": [
+        [
+          {
+            "node": "Armar prompt para Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar prompt para Gemini": {
+      "main": [
+        [
+          {
+            "node": "Gemini API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini API": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta Gemini": {
+      "main": [
+        [
+          {
+            "node": "¿Pedido cerrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Pedido cerrado?": {
+      "main": [
+        [
+          {
+            "node": "Notificar al negocio",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Simular escribiendo...",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simular escribiendo...",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simular escribiendo...": {
+      "main": [
+        [
+          {
+            "node": "Esperar 2 segundos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 2 segundos": {
+      "main": [
+        [
+          {
+            "node": "Enviar mensaje al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar mensaje al cliente": {
+      "main": [
+        [
+          {
+            "node": "Guardar historial del cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar al negocio": {
+      "main": [
+        [
+          {
+            "node": "Resetear estado del pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "8632bed4-b95a-433f-882d-78d52cc00f8a",
+  "versionCounter": 1,
+  "triggerCount": 0,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-04-23T13:43:32.113Z",
+      "createdAt": "2026-04-23T13:43:32.113Z",
+      "role": "workflow:owner",
+      "workflowId": "7DfDCoysaHCCNHK6",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,518 @@
+{
+  "updatedAt": "2026-03-26T17:59:35.000Z",
+  "createdAt": "2026-03-03T21:22:15.108Z",
+  "id": "TF1MRmXqDji6ZGiP",
+  "name": "Rentame2",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fin-check",
+              "leftValue": "={{ $('Cerebro - State Machine (Lógica)1').item.json.etapa }}",
+              "rightValue": "finalizado",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "607d05a5-6b86-4ddd-90b5-97f179a06efa",
+      "name": "If - ¿Finalizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "gestor-check",
+              "leftValue": "={{ $('Cerebro - State Machine (Lógica)1').item.json.gestor }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "8331041e-465f-41c4-ac7d-b9dd8ed79b72",
+      "name": "If - ¿Gestor encontrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        176,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "nelly.gonzalez@oxxo.com",
+        "subject": "=NUEVO INTERES DE RENTA EN: {{ $('Cerebro - State Machine (Lógica)1').item.json.municipio }}, {{ $('Cerebro - State Machine (Lógica)1').item.json.estado }}",
+        "message": "=<html>\n<body style=\"font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; background-color: #f2f8f3; padding: 20px;\">\n<div style=\"max-width: 600px; margin: auto; background: #ffffff; border-radius: 10px; padding: 30px; box-shadow: 0 6px 12px rgba(0,0,0,0.1);\">\n<h2 style=\"color: #28a745; text-align: center;\">🎉 ¡Tenemos buenas noticias! 🎉</h2>\n<p style=\"font-size: 18px; line-height: 1.6;\">¡<strong>{{ $('Cerebro - State Machine (Lógica)1').item.json.nombre }}</strong> está interesado en rentarnos su propiedad! 🙌</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">Esta es la información que nos compartió con entusiasmo:</p>\n<div style=\"background-color: #e8f5e9; padding: 20px; border-radius: 8px; border-left: 5px solid #28a745;\">\n<ul style=\"list-style: none; padding: 0; font-size: 16px;\">\n<li>📍 <strong>Ubicación:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.municipio }}, {{ $('Cerebro - State Machine (Lógica)1').item.json.estado }}</li>\n<li>📐 <strong>Superficie total:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.superficie }}</li>\n<li>📏 <strong>Frente:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.frente }}</li>\n<li>🧭 <strong>Ubicación en esquina:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.esquina }}</li>\n<li>🏠 <strong>Dirección completa:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.direccion }}</li>\n<li>📞 <strong>Teléfono de contacto:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.tel_propiedad }}</li>\n<li>📧 <strong>Correo electrónico:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.correo }}</li>\n</ul>\n</div>\n<p style=\"font-size: 16px; line-height: 1.6; margin-top: 20px;\">🔍 <a href=\"https://rentame.regiontamaulipas.com.mx/\" style=\"color: #28a745; text-decoration: none;\" target=\"_blank\"><strong>CONSULTA TODOS LOS PUNTOS QUE NOS HAN LLEGADO AQUÍ</strong></a></p>\n<p style=\"font-size: 16px; margin-top: 10px;\">¡No dudes en contactarlo lo antes posible! 💬 Esta puede ser una gran oportunidad.</p>\n<p style=\"text-align: center; font-size: 16px; margin-top: 40px;\">Con entusiasmo,<br><strong>El equipo de OXXO</strong></p>\n</div>\n</body>\n</html>\n",
+        "options": {
+          "ccList": "enrique.gil@oxxo.com",
+          "senderName": "RENTAME TU ESQUINA"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        432,
+        416
+      ],
+      "id": "42b58810-64e1-41ed-b699-3c3c3cc11ef5",
+      "name": "Gmail - Correo Sin Gestor",
+      "webhookId": "31074719-227e-4461-bae9-c4a2dfbdb655",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "yYV5eKr0mEreyIcm",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Cerebro - State Machine (Lógica)1').item.json.gestor }}",
+        "subject": "=NUEVO INTERES DE RENTA EN: {{ $('Cerebro - State Machine (Lógica)1').item.json.municipio }}, {{ $('Cerebro - State Machine (Lógica)1').item.json.estado }}",
+        "message": "=<html>\n<body style=\"font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; background-color: #f2f8f3; padding: 20px;\">\n<div style=\"max-width: 600px; margin: auto; background: #ffffff; border-radius: 10px; padding: 30px; box-shadow: 0 6px 12px rgba(0,0,0,0.1);\">\n<h2 style=\"color: #28a745; text-align: center;\">🎉 ¡Tenemos buenas noticias! 🎉</h2>\n<p style=\"font-size: 18px; line-height: 1.6;\">¡<strong>{{ $('Cerebro - State Machine (Lógica)1').item.json.nombre }}</strong> está interesado en rentarnos su propiedad! 🙌</p>\n<p style=\"font-size: 16px; line-height: 1.6;\">Esta es la información que nos compartió con entusiasmo:</p>\n<div style=\"background-color: #e8f5e9; padding: 20px; border-radius: 8px; border-left: 5px solid #28a745;\">\n<ul style=\"list-style: none; padding: 0; font-size: 16px;\">\n<li>📍 <strong>Ubicación:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.municipio }}, {{ $('Cerebro - State Machine (Lógica)1').item.json.estado }}</li>\n<li>📐 <strong>Superficie total:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.superficie }}</li>\n<li>📏 <strong>Frente:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.frente }}</li>\n<li>🧭 <strong>Ubicación en esquina:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.esquina }}</li>\n<li>🏠 <strong>Dirección completa:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.direccion }}</li>\n<li>📞 <strong>Teléfono de contacto:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.tel_propiedad }}</li>\n<li>📧 <strong>Correo electrónico:</strong> {{ $('Cerebro - State Machine (Lógica)1').item.json.correo }}</li>\n</ul>\n</div>\n<p style=\"font-size: 16px; line-height: 1.6; margin-top: 20px;\">🔍 <a href=\"https://rentame.regiontamaulipas.com.mx/\" style=\"color: #28a745; text-decoration: none;\" target=\"_blank\"><strong>CONSULTA TODOS LOS PUNTOS QUE NOS HAN LLEGADO AQUÍ</strong></a></p>\n<p style=\"font-size: 16px; margin-top: 10px;\">¡No dudes en contactarlo lo antes posible! 💬 Esta puede ser una gran oportunidad.</p>\n<p style=\"text-align: center; font-size: 16px; margin-top: 40px;\">Con entusiasmo,<br><strong>El equipo de OXXO</strong></p>\n</div>\n</body>\n</html>\n",
+        "options": {
+          "ccList": "enrique.gil@oxxo.com",
+          "senderName": "RENTAME TU ESQUINA"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        432,
+        704
+      ],
+      "id": "376f31cd-d069-4444-a13c-c695fd48b41b",
+      "name": "Gmail - Correo Con Gestor",
+      "webhookId": "29f4a868-249d-4fe3-9055-d6d41d6196a5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "yYV5eKr0mEreyIcm",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rentameia",
+        "options": {}
+      },
+      "id": "28a4dbf6-97b9-4f55-9a62-85fa3f690693",
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1728,
+        560
+      ],
+      "webhookId": "a2b9f5c5-81b3-4f89-b358-72667d422978"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "var1",
+              "name": "chat_id",
+              "value": "={{ ($json.body.data?.key?.remoteJid || $json.body?.sender || '').replace(/@.*$/, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "var2",
+              "name": "msg",
+              "value": "={{ $json.body.data?.message?.conversation || $json.body.data?.message?.extendedTextMessage?.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "var3",
+              "name": "fromMe",
+              "value": "={{ $json.body.data?.key?.fromMe || false }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1afb3764-1176-41b1-b148-c21d374e671d",
+      "name": "Edit Fields1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1520,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "anti-loop",
+              "leftValue": "={{ $json.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9681511c-44c3-4b0a-9a06-7d55661ceaf8",
+      "name": "Filtro Anti-Bucle1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1344,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT folio, numpreg, etapa AS step, nombre, telefono, correo, estado, municipio, superficie, frente, direccion, esquina, id, gestor FROM chatboot WHERE telefono = '{{ $json.chat_id }}' AND status = 'NUEVO' ORDER BY folio DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "a76d6495-03bc-47ff-9a19-11d06811f465",
+      "alwaysOutputData": true,
+      "name": "MySQL - Consultar Estado Actual1",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.1,
+      "position": [
+        -1152,
+        560
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "gufPNiuCSZBidXNM",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const chat_id = $('Edit Fields1').first().json.chat_id;\nconst msg = $('Edit Fields1').first().json.msg?.trim() || \"\";\n\n// 1. Recuperar estado desde chatboot (dbResult)\nconst dbResult = $('MySQL - Consultar Estado Actual1').first()?.json || {};\nconst stateMatch = $('MySQL - Validar Estado1').first()?.json?.name;\nconst muniResult = $('MySQL - Validar Municipio1').first()?.json || {};\nconst municMatch = muniResult.name;\nconst contactMatch = muniResult.contacto;\n\nlet currentStep = dbResult.step || 'inicio';\nlet numpreg = dbResult.numpreg || 0;\nlet folio = dbResult.folio || null;\nlet leadId = dbResult.id || null;\nlet gestor = dbResult.gestor || null;\n\n// Reconstruir objeto data desde las columnas de la tabla\nlet data = {\n  nombre: dbResult.nombre || \"\",\n  telefono: dbResult.telefono || \"\",\n  correo: dbResult.correo || \"\",\n  estado: dbResult.estado || \"\",\n  municipio: dbResult.municipio || \"\",\n  superficie: dbResult.superficie || \"\",\n  frente: dbResult.frente || \"\",\n  direccion: dbResult.direccion || \"\",\n  esquina: dbResult.esquina || \"\"\n};\n\nlet replyMessage = \"\";\nlet nextStep = currentStep;\n\n// Funciones de validación\nfunction isValidName(t) {\n  const comunes = [\"si\", \"sí\", \"no\", \"ok\", \"hola\", \"gracias\", \"claro\", \"adelante\", \"de acuerdo\"];\n  const regex = /^[a-záéíóúñ\\s]+$/i;\n  return !comunes.includes(t.toLowerCase()) && regex.test(t) && t.length > 2;\n}\nfunction isValidPhone(t) { return /^\\d{10}$/.test(t.replace(/\\D/g, \"\")); }\nfunction isValidEmail(t) {\n  return /no tengo|no cuento|n\\/a|ninguno/i.test(t) || /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/.test(t);\n}\n\n// Generar ID único si es nuevo (Telefono_YYYYMMDD_HHMMSS)\nif (!leadId) {\n  const now = new Date();\n  const timestamp = now.getFullYear() + \n    String(now.getMonth() + 1).padStart(2, '0') + \n    String(now.getDate()).padStart(2, '0') + \"_\" + \n    String(now.getHours()).padStart(2, '0') + \n    String(now.getMinutes()).padStart(2, '0') + \n    String(now.getSeconds()).padStart(2, '0');\n  leadId = `${chat_id}_${timestamp}`;\n}\n\nswitch(currentStep) {\n  case 'inicio':\n    nextStep = 'nombre';\n    numpreg = 0;\n    replyMessage = `¡Hola! 😊 Qué gusto saludarte. ¡Me da mucha alegría que te hayas puesto en contacto! *DE MOMENTO NO SON NECESARIAS IMAGENES NI DOCUMENTOS*\\n\\nPara empezar, estoy aquí para recopilar información sobre tu propiedad y evaluar si es viable para una nueva tienda.\\n\\n*POR FAVOR VAMOS UNA PREGUNTA A LA VEZ*\\n\\n¿Cuál es su Nombre?`;\n    break;\n    \n  case 'nombre':\n    if (isValidName(msg)) {\n      data.nombre = msg;\n      nextStep = 'telefono';\n      numpreg = 1;\n      replyMessage = `¡Muchísimas gracias ${data.nombre}! 😄\\n\\n*¿Cuál es su Teléfono? (10 dígitos)*`;\n    } else {\n      replyMessage = \"Por favor, ingresa un nombre válido (sin números ni símbolos).\";\n    }\n    break;\n    \n  case 'telefono':\n    if (isValidPhone(msg)) {\n      data.telefono = msg.replace(/\\D/g, \"\");\n      nextStep = 'correo';\n      numpreg = 2;\n      replyMessage = `¡Excelente! 😊 Gracias ${data.nombre}, para poder continuar, ¿podrías compartirnos *tu correo electrónico*? (Si no tienes, escribe 'no tengo')`;\n    } else {\n      replyMessage = \"Por favor, ingresa un número de teléfono válido de 10 dígitos.\";\n    }\n    break;\n    \n  case 'correo':\n    if (isValidEmail(msg)) {\n      data.correo = msg;\n      nextStep = 'valida_estado';\n      numpreg = 3;\n      replyMessage = `Perfecto, gracias. Ahora necesito saber algunos datos sobre tu propiedad.\\n\\n*¿En qué Estado de la República* Mexicana se encuentra?`;\n    } else {\n      replyMessage = \"Por favor, ingresa un correo electrónico válido o escribe 'no tengo'.\";\n    }\n    break;\n    \n  case 'valida_estado':\n    if (stateMatch) {\n        data.estado = stateMatch;\n        nextStep = 'valida_municipio';\n        numpreg = 4;\n        replyMessage = `Estado detectado: *${data.estado}* ✅\\n\\n*¿En qué Municipio* de ${data.estado} se encuentra su propiedad?`;\n    } else {\n        replyMessage = \"Disculpa, no encontré ese Estado en nuestra base de datos. Por favor, escribe el nombre correcto (ej. Tamaulipas, Nuevo León).\";\n    }\n    break;\n\n  case 'valida_municipio':\n    if (municMatch) {\n        data.municipio = municMatch;\n        gestor = contactMatch; // Asignamos el contacto de la tabla municipios\n        nextStep = 'superficie';\n        numpreg = 5;\n        replyMessage = `Municipio detectado: *${data.municipio}* ✅\\n\\n*¿Cuántos metros cuadrados tiene el terreno?* Si no sabes el total, indícame el largo y el ancho.`;\n    } else {\n        replyMessage = `No encontré ese municipio dentro de ${data.estado}. Por favor, escríbelo de nuevo correctamente.`;\n    }\n    break;\n    \n  case 'superficie':\n    data.superficie = msg;\n    nextStep = 'frente';\n    numpreg = 6;\n    replyMessage = `¿*Cuántos metros mide el frente* del inmueble, local o terreno?`;\n    break;\n    \n  case 'frente':\n    data.frente = msg;\n    nextStep = 'direccion';\n    numpreg = 7;\n    replyMessage = `¿Podría *compartirnos la dirección* donde se localiza la propiedad?\\nPor ejemplo:\\n- \"Av. Reforma 123, Col. Centro.\"`;\n    break;\n    \n  case 'direccion':\n    if (msg.length > 5) {\n      data.direccion = msg;\n      nextStep = 'esquina';\n      numpreg = 8;\n      replyMessage = `Por último, ${data.nombre} ¿Su propiedad *está situada en una esquina?* (Si/No)`;\n    } else {\n      replyMessage = \"Por favor proporciona una dirección más completa.\";\n    }\n    break;\n    \n  case 'esquina':\n    data.esquina = msg;\n    nextStep = 'finalizado';\n    numpreg = 9;\n    replyMessage = `Gracias por ponerte en contacto. La información ha sido completada y será turnada al equipo evaluador.\\n\\nSi deseas enviarnos información de otra propiedad, solo escribe \"hola de nuevo\".`;\n    break;\n    \n  case 'finalizado':\n    if (msg.toLowerCase().includes(\"hola de nuevo\")) {\n       nextStep = 'nombre';\n       numpreg = 10; // O reiniciar si se desea\n       // Reiniciamos datos para nueva propiedad\n       Object.keys(data).forEach(k => data[k] = \"\");\n       leadId = null; // Para generar uno nuevo\n       replyMessage = `¡Hola de nuevo! Empecemos de cero.\\n\\n¿Cuál es su Nombre?`;\n    } else {\n       replyMessage = `Tu solicitud ya está registrada. Si deseas registrar otra propiedad escribe \"hola de nuevo\".`;\n    }\n    break;\n    \n  default:\n    nextStep = 'nombre';\n    replyMessage = `¡Hola! Empecemos con tu solicitud.\\n\\n¿Cuál es su Nombre?`;\n    break;\n}\n\nreturn [{\n  json: {\n    // Campos para la tabla chatboot\n    folio: folio,\n    numpreg: numpreg,\n    etapa: nextStep,\n    nombre: data.nombre,\n    telefono_limpio: chat_id,\n    tel_propiedad: data.telefono,\n    correo: data.correo,\n    estado: data.estado,\n    municipio: data.municipio,\n    superficie: data.superficie,\n    frente: data.frente,\n    direccion: data.direccion,\n    esquina: data.esquina,\n    status: \"NUEVO\",\n    id: leadId,\n    gestor: gestor,\n    replyMessage: replyMessage,\n    // Guardamos estado serializado por si acaso (aunque ya no se use para leer)\n    data_json: JSON.stringify(data)\n  }\n}];"
+      },
+      "id": "7cdbc96f-efff-4f09-b008-bf947670e0bb",
+      "name": "Cerebro - State Machine (Lógica)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT DISTINCT estado AS name FROM municipios WHERE estado LIKE '%{{ $('Edit Fields1').item.json.msg }}%' LIMIT 1;",
+        "options": {}
+      },
+      "id": "870df923-a6f4-49b7-a772-b60dfb8f6aa7",
+      "alwaysOutputData": true,
+      "name": "MySQL - Validar Estado1",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.1,
+      "position": [
+        -800,
+        416
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "gufPNiuCSZBidXNM",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT municipio AS name, contacto FROM municipios WHERE estado = '{{ $('MySQL - Consultar Estado Actual1').item.json.estado || '' }}' AND municipio LIKE '%{{ $('Edit Fields1').item.json.msg }}%' LIMIT 1;",
+        "options": {}
+      },
+      "id": "3dc2b9b6-c2da-498f-8db0-175c7c2e3e54",
+      "alwaysOutputData": true,
+      "name": "MySQL - Validar Municipio1",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.1,
+      "position": [
+        -768,
+        704
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "gufPNiuCSZBidXNM",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO chatboot (folio, nombre, telefono, correo, estado, municipio, esquina, superficie, frente, direccion, status, id, gestor, etapa, numpreg)\nVALUES (\n  {{ $json.folio || 'NULL' }}, \n  '{{ $json.nombre }}', \n  '{{ $json.telefono_limpio }}', \n  '{{ $json.correo }}', \n  '{{ $json.estado }}', \n  '{{ $json.municipio }}', \n  '{{ $json.esquina }}', \n  '{{ $json.superficie }}', \n  '{{ $json.frente }}', \n  '{{ $json.direccion }}', \n  '{{ $json.status }}', \n  '{{ $json.id }}', \n  '{{ $json.gestor }}', \n  '{{ $json.etapa }}', \n  {{ $json.numpreg }}\n)\nON DUPLICATE KEY UPDATE \n  nombre = VALUES(nombre),\n  telefono = VALUES(telefono),\n  correo = VALUES(correo),\n  estado = VALUES(estado),\n  municipio = VALUES(municipio),\n  esquina = VALUES(esquina),\n  superficie = VALUES(superficie),\n  frente = VALUES(frente),\n  direccion = VALUES(direccion),\n  status = VALUES(status),\n  id = VALUES(id),\n  gestor = VALUES(gestor),\n  etapa = VALUES(etapa),\n  numpreg = VALUES(numpreg);",
+        "options": {}
+      },
+      "id": "482759ad-1897-4e1c-b9d5-7b23bd389a7f",
+      "name": "MySQL - Guardar Avance1",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.1,
+      "position": [
+        -608,
+        560
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "gufPNiuCSZBidXNM",
+          "name": "MySQL account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://rentame_evolution-api:8080/message/sendText/renta",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "429683C4C977415CAAFCCE10F7D57E11"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Webhook1').item.json.body.data.key.remoteJid }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $('Cerebro - State Machine (Lógica)1').item.json.replyMessage }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "038c2ebf-9818-408a-9bd8-fabb26ddd1da",
+      "name": "Enviar WhatsApp (Evolution API)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "If - ¿Finalizado?": {
+      "main": [
+        [
+          {
+            "node": "If - ¿Gestor encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - ¿Gestor encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Correo Sin Gestor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail - Correo Con Gestor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Filtro Anti-Bucle1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro Anti-Bucle1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "MySQL - Consultar Estado Actual1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL - Consultar Estado Actual1": {
+      "main": [
+        [
+          {
+            "node": "MySQL - Validar Estado1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerebro - State Machine (Lógica)1": {
+      "main": [
+        [
+          {
+            "node": "MySQL - Guardar Avance1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL - Validar Estado1": {
+      "main": [
+        [
+          {
+            "node": "MySQL - Validar Municipio1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL - Validar Municipio1": {
+      "main": [
+        [
+          {
+            "node": "Cerebro - State Machine (Lógica)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MySQL - Guardar Avance1": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (Evolution API)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp (Evolution API)1": {
+      "main": [
+        [
+          {
+            "node": "If - ¿Finalizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "9212f08c-9a9f-4b69-838f-c692ad97ddb9",
+  "versionCounter": 57,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-03T21:22:15.116Z",
+      "createdAt": "2026-03-03T21:22:15.116Z",
+      "role": "workflow:owner",
+      "workflowId": "TF1MRmXqDji6ZGiP",
+      "projectId": "WR3d99j6gpvu934S",
+      "project": {
+        "updatedAt": "2025-12-23T15:00:10.609Z",
+        "createdAt": "2025-12-23T14:58:41.712Z",
+        "id": "WR3d99j6gpvu934S",
+        "name": "Enrique gil <enrique.gilzara@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null
+      }
+    }
+  ]
+}
