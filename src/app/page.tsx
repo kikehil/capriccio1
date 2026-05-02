@@ -32,7 +32,8 @@ export default function Home() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const [cartForceOpen, setCartForceOpen] = useState(false);
-  const [horarioModal, setHorarioModal] = useState<'antes' | 'despues' | null>(null);
+  const [horarioModal, setHorarioModal] = useState<'antes' | 'despues' | 'emergencia' | null>(null);
+  const [storeStatus, setStoreStatus] = useState<{ opening_time: string; closing_time: string; orders_enabled: boolean } | null>(null);
 
   const getHoraMexico = () => {
     const now = new Date();
@@ -42,15 +43,26 @@ export default function Home() {
     }).formatToParts(now);
     const h = parseInt(partes.find(p => p.type === 'hour')!.value);
     const m = parseInt(partes.find(p => p.type === 'minute')!.value);
-    return h * 60 + m; // minutos desde medianoche
+    return h * 60 + m;
   };
 
   const handleOpenCheckout = () => {
+    const status = storeStatus ?? { opening_time: '10:00', closing_time: '21:30', orders_enabled: true };
+    if (!status.orders_enabled) { setHorarioModal('emergencia'); return; }
     const mins = getHoraMexico();
-    if (mins < 10 * 60) { setHorarioModal('antes'); return; }         // antes de 10:00
-    if (mins >= 21 * 60 + 30) { setHorarioModal('despues'); return; } // 9:30 PM o después
+    const [oh, om] = status.opening_time.split(':').map(Number);
+    const [ch, cm] = status.closing_time.split(':').map(Number);
+    if (mins < oh * 60 + om) { setHorarioModal('antes'); return; }
+    if (mins >= ch * 60 + cm) { setHorarioModal('despues'); return; }
     setIsCheckoutOpen(true);
   };
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/store-status`)
+      .then(r => r.json())
+      .then(setStoreStatus)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     // Escuchar actualizaciones globales del menú (ej. cuando el admin apaga una pizza) y carga inicial
@@ -437,9 +449,23 @@ return (
     {horarioModal && (
       <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <div className="bg-slate-950 border border-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
-          <div className="text-5xl mb-4">{horarioModal === 'antes' ? '🌅' : '🌙'}</div>
-          {horarioModal === 'antes' ? (
+          {horarioModal === 'emergencia' ? (
             <>
+              <div className="text-5xl mb-4">🚫</div>
+              <h2 className="text-white font-black italic text-2xl uppercase tracking-tight mb-3">
+                ¡Pedidos pausados!
+              </h2>
+              <p className="text-slate-400 font-medium leading-relaxed mb-2">
+                Por el momento no estamos recibiendo pedidos en línea.
+              </p>
+              <p className="text-capriccio-gold font-bold text-lg">
+                Disculpa los inconvenientes.<br />
+                <span className="text-base font-medium text-slate-300">¡Volvemos muy pronto!</span>
+              </p>
+            </>
+          ) : horarioModal === 'antes' ? (
+            <>
+              <div className="text-5xl mb-4">🌅</div>
               <h2 className="text-white font-black italic text-2xl uppercase tracking-tight mb-3">
                 ¡Muy temprano, amigo!
               </h2>
@@ -448,21 +474,22 @@ return (
               </p>
               <p className="text-capriccio-gold font-bold text-lg">
                 Recibimos pedidos a partir de las<br />
-                <span className="text-2xl">10:00 AM</span>
+                <span className="text-2xl">{storeStatus?.opening_time ?? '10:00'}</span>
               </p>
               <p className="text-slate-500 text-sm mt-2">¡Te esperamos pronto!</p>
             </>
           ) : (
             <>
+              <div className="text-5xl mb-4">🌙</div>
               <h2 className="text-white font-black italic text-2xl uppercase tracking-tight mb-3">
                 ¡Ya cerramos por hoy!
               </h2>
               <p className="text-slate-400 font-medium leading-relaxed mb-2">
-                Gracias por tu preferencia. La cocina cierra pedidos a las 9:30 PM.
+                Gracias por tu preferencia. La cocina ya cerró pedidos por hoy.
               </p>
               <p className="text-capriccio-gold font-bold text-lg">
                 Mañana te atendemos desde las<br />
-                <span className="text-2xl">10:00 AM</span>
+                <span className="text-2xl">{storeStatus?.opening_time ?? '10:00'}</span>
               </p>
               <p className="text-slate-500 text-sm mt-2">¡Hasta pronto! 🍕</p>
             </>

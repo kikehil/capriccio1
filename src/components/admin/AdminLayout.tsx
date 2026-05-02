@@ -121,7 +121,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, activeTab, setActiv
                     <button
                         onClick={() => {
                             localStorage.clear();
-                            window.location.reload();
+                            window.location.href = '/admin/login';
                         }}
                         className="flex items-center justify-center gap-3 w-full p-3 rounded-2xl bg-red-500/10 text-red-500 font-bold hover:bg-red-500 hover:text-white transition-all group"
                     >

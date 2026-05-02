@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Lock, Loader2, User } from 'lucide-react';
 import { API_URL } from '@/lib/socket';
@@ -12,6 +13,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children, role }: ProtectedRouteProps) {
+    const router = useRouter();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [password, setPassword] = useState('');
@@ -23,6 +25,7 @@ export default function ProtectedRoute({ children, role }: ProtectedRouteProps) 
         const token = localStorage.getItem(`capriccio_token_${role}`);
         if (!token) {
             setIsLoading(false);
+            if (role === 'admin') router.replace('/admin/login');
             return;
         }
 
@@ -34,10 +37,11 @@ export default function ProtectedRoute({ children, role }: ProtectedRouteProps) 
                 if (res.ok) {
                     setIsAuthenticated(true);
                 } else {
-                    // Token inválido o expirado → limpiar y pedir login
+                    // Token inválido o expirado → limpiar y redirigir
                     localStorage.removeItem(`capriccio_token_${role}`);
                     localStorage.removeItem('capriccio_user_role');
                     localStorage.removeItem('capriccio_username');
+                    if (role === 'admin') router.replace('/admin/login');
                 }
             })
             .catch(() => {
@@ -45,7 +49,7 @@ export default function ProtectedRoute({ children, role }: ProtectedRouteProps) 
                 setIsAuthenticated(true);
             })
             .finally(() => setIsLoading(false));
-    }, [role]);
+    }, [role, router]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

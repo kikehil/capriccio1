@@ -102,6 +102,24 @@ app.patch('/api/config', adminOnly, async (req, res) => {
     }
 });
 
+// GET /api/store-status — público, sin auth
+app.get('/api/store-status', async (req, res) => {
+    try {
+        const r = await db.query(
+            "SELECT key, value FROM negocio_config WHERE key IN ('opening_time','closing_time','orders_enabled')"
+        );
+        const cfg = {};
+        r.rows.forEach(row => { cfg[row.key] = row.value; });
+        res.json({
+            opening_time: cfg.opening_time || '10:00',
+            closing_time: cfg.closing_time || '21:30',
+            orders_enabled: cfg.orders_enabled !== 'false',
+        });
+    } catch (e) {
+        res.json({ opening_time: '10:00', closing_time: '21:30', orders_enabled: true });
+    }
+});
+
 // --- AUTH ENDPOINTS ---
 
 // Endpoint para recuperar datos del usuario autenticado desde el token
@@ -446,7 +464,33 @@ app.get('/api/pedidos', staffOnly, async (req, res) => {
 app.post('/api/pedidos', async (req, res) => {
     const { cliente_nombre, telefono, direccion, referencias, items, lat, lng, telefono_cliente } = req.body;
     console.log('📦 [PEDIDO] Recibido:', { cliente_nombre, items_count: items?.length });
-    
+
+    // 0. Validación de horario y botón de emergencia
+    try {
+        const storeR = await db.query(
+            "SELECT key, value FROM negocio_config WHERE key IN ('opening_time','closing_time','orders_enabled')"
+        );
+        const cfg = {};
+        storeR.rows.forEach(row => { cfg[row.key] = row.value; });
+        if (cfg.orders_enabled === 'false') {
+            return res.status(503).json({ error: 'Pedidos desactivados temporalmente', code: 'STORE_CLOSED' });
+        }
+        const now = new Date();
+        const parts = new Intl.DateTimeFormat('es-MX', {
+            timeZone: 'America/Mexico_City', hour: 'numeric', minute: 'numeric', hour12: false
+        }).formatToParts(now);
+        const h = parseInt(parts.find(p => p.type === 'hour').value);
+        const m = parseInt(parts.find(p => p.type === 'minute').value);
+        const currentMins = h * 60 + m;
+        const [oh, om] = (cfg.opening_time || '10:00').split(':').map(Number);
+        const [ch, cm] = (cfg.closing_time || '21:30').split(':').map(Number);
+        if (currentMins < oh * 60 + om || currentMins >= ch * 60 + cm) {
+            return res.status(503).json({ error: 'Fuera de horario de atención', code: 'OUT_OF_HOURS' });
+        }
+    } catch (e) {
+        // Si falla la consulta de config, no bloqueamos el pedido
+    }
+
     // 1. Basic Field Validation
     if (!cliente_nombre || !telefono || !direccion || !items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Faltan datos obligatorios para el pedido' });
