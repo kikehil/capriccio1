@@ -44,6 +44,14 @@ export default function CajaPage() {
 
       if (response.ok) {
         const data = await response.json();
+        // PostgreSQL retorna campos numéricos como strings — normalizar
+        if (data) {
+          data.efectivo_inicial   = Number(data.efectivo_inicial   ?? 0);
+          data.efectivo_recibido  = Number(data.efectivo_recibido  ?? 0);
+          data.efectivo_reportado = Number(data.efectivo_reportado ?? 0);
+          data.diferencia         = Number(data.diferencia         ?? 0);
+          data.duracion_segundos  = Number(data.duracion_segundos  ?? 0);
+        }
         setTurno(data);
       }
     } catch (error) {

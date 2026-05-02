@@ -283,6 +283,32 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
+// GET /api/menu/productos — Catálogo público para bot WhatsApp (solo activos)
+app.get('/api/menu/productos', async (req, res) => {
+    try {
+        const r = await db.query(
+            `SELECT nombre, descripcion, precio, categoria, precios
+             FROM productos WHERE activo = 1 ORDER BY categoria, nombre`
+        );
+        const productos = r.rows.map(p => {
+            let precios = p.precios;
+            if (typeof precios === 'string') {
+                try { precios = JSON.parse(precios); } catch { precios = {}; }
+            }
+            return {
+                nombre: p.nombre,
+                categoria: p.categoria || 'pizzas',
+                precio_base: Number(p.precio || 0),
+                precios: precios || {},
+                descripcion: p.descripcion || ''
+            };
+        });
+        res.json({ ok: true, productos });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/productos', adminOnly, async (req, res) => {
     const { nombre, descripcion, precio, imagen, categoria, activo, precios } = req.body;
     try {
@@ -483,8 +509,8 @@ app.post('/api/pedidos', async (req, res) => {
 
         const metodo_entrega = req.body.metodo_entrega || 'domicilio';
         const pedidoRes = await connection.client.query(
-            `INSERT INTO pedidos (order_id, cliente_nombre, telefono, direccion, referencias, total, lat, lng, negocio_id, telefono_cliente, metodo_entrega)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10) RETURNING id`,
+            `INSERT INTO pedidos (order_id, cliente_nombre, telefono, direccion, referencias, total, lat, lng, negocio_id, telefono_cliente, metodo_entrega, order_origin)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, 'web') RETURNING id`,
             [orderId, cliente_nombre, telefono, direccion, referencias, validatedTotal, lat, lng, telefono_cliente || telefono, metodo_entrega]
         );
         const pedidoId = pedidoRes.rows[0].id;
@@ -544,6 +570,132 @@ app.post('/api/pedidos', async (req, res) => {
         res.status(400).json({ error: err.message });
     } finally {
         connection.release();
+    }
+});
+
+// ============================================================
+// POST /api/webhook/whatsapp-pedido — Recibe pedidos del bot n8n
+// Autenticación: Header  X-Webhook-Secret: <N8N_WEBHOOK_SECRET>
+// ============================================================
+app.post('/api/webhook/whatsapp-pedido', async (req, res) => {
+    // ── 1. Validar secret ──────────────────────────────────────
+    const secret = req.headers['x-webhook-secret'];
+    if (!secret || secret !== process.env.N8N_WEBHOOK_SECRET) {
+        console.warn('[WA-WEBHOOK] Intento sin secret válido');
+        return res.status(401).json({ error: 'No autorizado' });
+    }
+
+    const {
+        cliente_nombre,
+        telefono,
+        items,          // [{ nombre, cantidad, precio_unitario, size?, extras?: [{nombre, precio}] }]
+        total,          // total ya confirmado con el cliente (opcional, se recalcula si no viene)
+        metodo_entrega, // 'domicilio' | 'sucursal' | 'para_llevar'
+        direccion,
+        referencias,
+        lat,
+        lng,
+    } = req.body;
+
+    // ── 2. Validación básica ───────────────────────────────────
+    if (!cliente_nombre || !telefono) {
+        return res.status(400).json({ error: 'cliente_nombre y telefono son obligatorios' });
+    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'items es obligatorio y debe ser un arreglo no vacío' });
+    }
+
+    try {
+        const crypto = require('crypto');
+        const orderId = `ord-${crypto.randomBytes(3).toString('hex')}`;
+
+        // ── 3. Calcular total desde items (si no viene calculado) ─
+        let calculatedTotal = 0;
+        for (const item of items) {
+            const qty  = Number(item.cantidad || item.quantity || 1);
+            const price = Number(item.precio_unitario || item.precio || 0);
+            calculatedTotal += price * qty;
+            if (item.extras && Array.isArray(item.extras)) {
+                for (const ex of item.extras) {
+                    calculatedTotal += Number(ex.precio || 0) * qty;
+                }
+            }
+        }
+        const totalFinal = total ? Number(total) : calculatedTotal;
+
+        const entrega = metodo_entrega || 'domicilio';
+        const negocio_id = 1;
+
+        // ── 4. Insertar pedido ─────────────────────────────────
+        const pedidoRes = await db.query(
+            `INSERT INTO pedidos
+             (order_id, cliente_nombre, telefono, direccion, referencias,
+              total, lat, lng, negocio_id, telefono_cliente,
+              metodo_entrega, order_origin, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'whatsapp','recibido')
+             RETURNING id`,
+            [orderId, cliente_nombre, telefono,
+             direccion || null, referencias || null,
+             totalFinal, lat || null, lng || null,
+             negocio_id, telefono,
+             entrega]
+        );
+        const pedidoId = pedidoRes.rows[0].id;
+
+        // ── 5. Insertar detalle de items ───────────────────────
+        for (const item of items) {
+            const qty   = Number(item.cantidad || item.quantity || 1);
+            const price = Number(item.precio_unitario || item.precio || 0);
+            const nombre = item.nombre || item.pizza_nombre || 'Producto';
+
+            const detRes = await db.query(
+                `INSERT INTO detalle_pedidos
+                 (pedido_id, pizza_nombre, cantidad, precio_unitario, size, crust)
+                 VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+                [pedidoId, nombre, qty, price, item.size || null, item.crust || null]
+            );
+            const detailId = detRes.rows[0].id;
+
+            if (item.extras && Array.isArray(item.extras)) {
+                for (const ex of item.extras) {
+                    await db.query(
+                        `INSERT INTO extras_pedidos (detalle_id, extra_nombre, precio_extra)
+                         VALUES ($1,$2,$3)`,
+                        [detailId, ex.nombre, ex.precio || 0]
+                    );
+                }
+            }
+        }
+
+        // ── 6. Emitir socket → cocina y POS lo ven en tiempo real
+        io.emit('nuevo_pedido', {
+            order_id: orderId,
+            cliente_nombre,
+            telefono,
+            direccion,
+            total: totalFinal,
+            status: 'recibido',
+            order_origin: 'whatsapp',
+            metodo_entrega: entrega,
+            items,
+            created_at: new Date().toISOString(),
+        });
+
+        console.log(`✅ [WA-WEBHOOK] Pedido guardado: ${orderId} — ${cliente_nombre} — $${totalFinal}`);
+
+        // ── 7. Responder al bot con el folio ──────────────────
+        const shortId = orderId.split('-')[1]?.toUpperCase() || orderId.slice(-6).toUpperCase();
+        res.status(201).json({
+            success: true,
+            order_id: orderId,
+            folio: shortId,
+            total: totalFinal,
+            message: `Pedido #${shortId} guardado correctamente`,
+        });
+
+    } catch (err) {
+        console.error('[WA-WEBHOOK] Error al guardar pedido:', err.message);
+        res.status(500).json({ error: 'Error interno al guardar el pedido', detalle: err.message });
     }
 });
 
@@ -1159,10 +1311,10 @@ function httpPost(url, body, extraHeaders = {}, timeoutMs = 10000) {
     });
 }
 
-// ─── Helper centralizado WhatsApp (Evolution API local en puerto 8080) ───────
-const WA_EVOLUTION_URL  = 'http://76.13.24.103:8080';
-const WA_EVOLUTION_KEY  = 'DF0ACCC20D48-4293-A570-A30D6C532231';
-const WA_INSTANCE       = 'pizza';
+// ─── Helper centralizado WhatsApp (Evolution API) ────────────────────────────
+const WA_EVOLUTION_URL   = process.env.WA_EVOLUTION_URL  || 'https://evolution.regiontamaulipas.com.mx';
+const WA_EVOLUTION_KEY   = process.env.WA_EVOLUTION_KEY  || 'DF0ACCC20D48-4293-A570-A30D6C532231';
+const WA_INSTANCE        = process.env.WA_INSTANCE       || 'pizza';
 const WA_NEGOCIO_DEFAULT = '5218181190257';
 async function getWANegocio() {
     const num = await getConfig('whatsapp_negocio', WA_NEGOCIO_DEFAULT);
@@ -1179,7 +1331,7 @@ async function sendWA(numero, texto, tag = '') {
     try {
         const r = await httpPost(
             `${WA_EVOLUTION_URL}/message/sendText/${WA_INSTANCE}`,
-            { number: destino, textMessage: { text: texto } },
+            { number: destino, text: texto },
             { apikey: WA_EVOLUTION_KEY },
             12000
         );
@@ -1501,6 +1653,23 @@ app.post('/api/caja/turno/abrir', authorize(['admin', 'caja', 'responsable']), a
     const negocio_id = 1; // En producción, obtener del negocio del usuario
 
     try {
+        // 🛡️ SEGURIDAD: Verificar si ya existe un turno abierto para este cajero
+        const existe = await db.query(
+            `SELECT *,
+                EXTRACT(EPOCH FROM (NOW() - abierto_at))::INTEGER AS duracion_segundos,
+                TO_CHAR(abierto_at AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') AS hora_apertura_utc,
+                TO_CHAR(abierto_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS fecha_apertura_utc
+             FROM caja_turno
+             WHERE cajero_id = $1 AND cerrado_at IS NULL AND negocio_id = $2
+             ORDER BY abierto_at ASC LIMIT 1`,
+            [req.user.id, negocio_id]
+        );
+
+        if (existe.rows.length > 0) {
+            console.log(`[TURNO] Reutilizando turno existente ID ${existe.rows[0].id} para ${req.user.username}`);
+            return res.json(existe.rows[0]);
+        }
+
         const result = await db.query(
             `INSERT INTO caja_turno (cajero_id, cajero_nombre, negocio_id, efectivo_inicial)
              VALUES ($1, $2, $3, $4)
@@ -1522,12 +1691,12 @@ app.get('/api/caja/turno/activo', authorize(['admin', 'caja', 'responsable']), a
     try {
         const result = await db.query(
             `SELECT *,
-                CAST((julianday('now') - julianday(abierto_at)) * 86400 AS INTEGER) AS duracion_segundos,
-                TO_CHAR(abierto_at, 'HH24:MI:SS') AS hora_apertura_utc,
-                TO_CHAR(abierto_at, 'YYYY-MM-DD') AS fecha_apertura_utc
+                EXTRACT(EPOCH FROM (NOW() - abierto_at))::INTEGER AS duracion_segundos,
+                TO_CHAR(abierto_at AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') AS hora_apertura_utc,
+                TO_CHAR(abierto_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS fecha_apertura_utc
              FROM caja_turno
              WHERE cajero_id = $1 AND cerrado_at IS NULL AND negocio_id = $2
-             ORDER BY abierto_at DESC LIMIT 1`,
+             ORDER BY abierto_at ASC LIMIT 1`,
             [req.user.id, negocio_id]
         );
         if (result.rows.length === 0) {
@@ -1762,20 +1931,19 @@ app.get('/api/caja/pedidos/turno/:turno_id', authorize(['admin', 'caja', 'respon
         const turnoRes = await db.query('SELECT * FROM caja_turno WHERE id = $1', [turno_id]);
         if (turnoRes.rows.length === 0) return res.status(404).json({ error: 'Turno no encontrado' });
         const turno = turnoRes.rows[0];
-        const cerradoAt = turno.cerrado_at || new Date().toISOString();
-
-        // Todos los pedidos activos creados durante el turno (POS + web)
+        
+        // Usar NOW() de PostgreSQL para evitar discrepancias de zona horaria con JS
         const result = await db.query(
             `SELECT p.* FROM pedidos p
              WHERE p.created_at >= $1
-               AND p.created_at <= $2
+               AND p.created_at <= COALESCE($2, NOW())
                AND p.status NOT IN ('cancelado', 'entregado')
              ORDER BY p.created_at DESC`,
-            [turno.abierto_at, cerradoAt]
+            [turno.abierto_at, turno.cerrado_at]
         );
         res.json(result.rows);
     } catch (e) {
-        console.error('Error:', e);
+        console.error('Error al obtener pedidos del turno:', e);
         res.status(500).json({ error: 'Error' });
     }
 });
@@ -1787,8 +1955,8 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
     try {
         const turnoResult = await db.query(
             `SELECT *,
-                CAST((julianday('now') - julianday(abierto_at)) * 86400 AS INTEGER) AS duracion_segundos,
-                TO_CHAR(abierto_at, 'HH24:MI:SS') AS hora_apertura_utc
+                EXTRACT(EPOCH FROM (NOW() - abierto_at))::INTEGER AS duracion_segundos,
+                TO_CHAR(abierto_at AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') AS hora_apertura_utc
              FROM caja_turno WHERE id = $1`,
             [turno_id]
         );
@@ -1818,13 +1986,29 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
         // Resumen de todos los pedidos del turno
         const resumenResult = await db.query(
             `SELECT
-                COUNT(*) as total_ordenes,
-                SUM(CASE WHEN payment_method != 'no_pago' AND payment_method IS NOT NULL THEN 1 ELSE 0 END) as ordenes_pagadas,
-                SUM(CASE WHEN payment_method = 'efectivo' THEN COALESCE(total, 0) ELSE 0 END) as total_efectivo,
-                SUM(CASE WHEN payment_method = 'tarjeta' THEN COALESCE(total, 0) ELSE 0 END) as total_tarjeta,
-                SUM(CASE WHEN order_origin = 'llamada' THEN 1 ELSE 0 END) as ordenes_llamada,
-                SUM(CASE WHEN order_origin = 'presencial' THEN 1 ELSE 0 END) as ordenes_presencial,
-                SUM(CASE WHEN order_origin = 'web' THEN 1 ELSE 0 END) as ordenes_web
+                COUNT(*)                                                                              AS total_ordenes,
+                SUM(CASE WHEN payment_method NOT IN ('no_pago') AND payment_method IS NOT NULL
+                         THEN 1 ELSE 0 END)                                                         AS ordenes_pagadas,
+                -- Por método de pago: montos
+                SUM(CASE WHEN payment_method = 'efectivo'     THEN COALESCE(total,0) ELSE 0 END)    AS total_efectivo,
+                SUM(CASE WHEN payment_method = 'tarjeta'      THEN COALESCE(total,0) ELSE 0 END)    AS total_tarjeta,
+                SUM(CASE WHEN payment_method = 'transferencia' THEN COALESCE(total,0) ELSE 0 END)   AS total_transferencia,
+                -- Sin cobrar
+                SUM(CASE WHEN payment_method = 'no_pago'      THEN 1             ELSE 0 END)        AS ordenes_sin_cobrar,
+                SUM(CASE WHEN payment_method = 'no_pago'      THEN COALESCE(total,0) ELSE 0 END)    AS monto_sin_cobrar,
+                -- Por canal: conteos
+                SUM(CASE WHEN order_origin = 'web'            THEN 1 ELSE 0 END)                    AS ordenes_web,
+                SUM(CASE WHEN order_origin = 'presencial'     THEN 1 ELSE 0 END)                    AS ordenes_presencial,
+                SUM(CASE WHEN order_origin = 'llamada'        THEN 1 ELSE 0 END)                    AS ordenes_llamada,
+                SUM(CASE WHEN order_origin = 'whatsapp'       THEN 1 ELSE 0 END)                    AS ordenes_whatsapp,
+                SUM(CASE WHEN order_origin IS NULL             THEN 1 ELSE 0 END)                    AS ordenes_sin_canal,
+                -- Por canal: montos totales (incluyendo no_pago)
+                SUM(CASE WHEN order_origin = 'web'            THEN COALESCE(total,0) ELSE 0 END)    AS monto_web,
+                SUM(CASE WHEN order_origin = 'presencial'     THEN COALESCE(total,0) ELSE 0 END)    AS monto_presencial,
+                SUM(CASE WHEN order_origin = 'llamada'        THEN COALESCE(total,0) ELSE 0 END)    AS monto_llamada,
+                SUM(CASE WHEN order_origin = 'whatsapp'       THEN COALESCE(total,0) ELSE 0 END)    AS monto_whatsapp,
+                -- Total general cobrado
+                SUM(CASE WHEN payment_method != 'no_pago'     THEN COALESCE(total,0) ELSE 0 END)    AS total_cobrado
              FROM pedidos
              WHERE created_at >= $1 AND created_at <= $2`,
             [turno.abierto_at, cerradoAt]

@@ -1,6 +1,6 @@
 // Tipos para el módulo de Caja/POS
 
-export type OrderOrigin = 'web' | 'llamada' | 'presencial';
+export type OrderOrigin = 'web' | 'llamada' | 'presencial' | 'whatsapp';
 export type DeliveryMethod = 'sucursal' | 'domicilio' | 'para_llevar';
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'mixto' | 'no_pago';
 

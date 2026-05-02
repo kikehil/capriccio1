@@ -1,15 +1,28 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, User } from 'lucide-react';
+import { DollarSign, TrendingUp, User, Globe, Monitor, Phone, MessageCircle, AlertTriangle, CheckCircle } from 'lucide-react';
 import { CajaTurno } from '@/data/caja-types';
 import { API_URL } from '@/lib/socket';
 
 interface CashRegisterStats {
   total_ordenes: number;
+  ordenes_pagadas: number;
   total_efectivo: number;
   total_tarjeta: number;
-  total_ingresos: number;
+  total_transferencia: number;
+  ordenes_sin_cobrar: number;
+  monto_sin_cobrar: number;
+  ordenes_web: number;
+  ordenes_presencial: number;
+  ordenes_llamada: number;
+  ordenes_whatsapp: number;
+  ordenes_sin_canal: number;
+  monto_web: number;
+  monto_presencial: number;
+  monto_llamada: number;
+  monto_whatsapp: number;
+  total_cobrado: number;
 }
 
 interface OrdenDetalle {
@@ -31,61 +44,63 @@ interface CashRegisterPanelProps {
   turno: CajaTurno;
 }
 
+const fmt = (n: number) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const CashRegisterPanel: React.FC<CashRegisterPanelProps> = ({ turno }) => {
-  const [stats, setStats] = useState<CashRegisterStats>({
-    total_ordenes: 0,
-    total_efectivo: 0,
-    total_tarjeta: 0,
-    total_ingresos: 0,
-  });
+  const [stats, setStats] = useState<CashRegisterStats | null>(null);
   const [ordenes, setOrdenes] = useState<OrdenDetalle[]>([]);
   const [loading, setLoading] = useState(true);
-  // Duración calculada por el servidor (segundos), libre de timezone
   const [duracionBase, setDuracionBase] = useState<number>(0);
   const [duracionBaseAt, setDuracionBaseAt] = useState<number>(Date.now());
   const [horaAperturaUTC, setHoraAperturaUTC] = useState<string>('');
   const [tickSecs, setTickSecs] = useState<number>(0);
+  const [seccionActiva, setSeccionActiva] = useState<'conciliacion' | 'canales' | 'pendientes' | 'detalle'>('conciliacion');
 
-  // Ticker de 1 segundo para la duración live
   useEffect(() => {
-    const t = setInterval(() => {
-      setTickSecs(Math.floor((Date.now() - duracionBaseAt) / 1000));
-    }, 1000);
+    const t = setInterval(() => setTickSecs(Math.floor((Date.now() - duracionBaseAt) / 1000)), 1000);
     return () => clearInterval(t);
   }, [duracionBaseAt]);
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 10000); // Refrescar cada 10 segundos
+    const interval = setInterval(fetchStats, 10000);
     return () => clearInterval(interval);
   }, [turno.id]);
 
   const fetchStats = async () => {
     try {
       const response = await fetch(`${API_URL}/api/caja/reporte/turno/${turno.id}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('capriccio_token_caja')}`,
-        },
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('capriccio_token_caja')}` },
       });
       if (response.ok) {
         const data = await response.json();
-        const resumen = data.resumen;
+        const r = data.resumen;
         setStats({
-          total_ordenes: resumen.total_ordenes || 0,
-          total_efectivo: resumen.total_efectivo || 0,
-          total_tarjeta: resumen.total_tarjeta || 0,
-          total_ingresos: (resumen.total_efectivo || 0) + (resumen.total_tarjeta || 0),
+          total_ordenes:       Number(r.total_ordenes       || 0),
+          ordenes_pagadas:     Number(r.ordenes_pagadas     || 0),
+          total_efectivo:      Number(r.total_efectivo      || 0),
+          total_tarjeta:       Number(r.total_tarjeta       || 0),
+          total_transferencia: Number(r.total_transferencia || 0),
+          ordenes_sin_cobrar:  Number(r.ordenes_sin_cobrar  || 0),
+          monto_sin_cobrar:    Number(r.monto_sin_cobrar    || 0),
+          ordenes_web:         Number(r.ordenes_web         || 0),
+          ordenes_presencial:  Number(r.ordenes_presencial  || 0),
+          ordenes_llamada:     Number(r.ordenes_llamada     || 0),
+          ordenes_whatsapp:    Number(r.ordenes_whatsapp    || 0),
+          ordenes_sin_canal:   Number(r.ordenes_sin_canal   || 0),
+          monto_web:           Number(r.monto_web           || 0),
+          monto_presencial:    Number(r.monto_presencial    || 0),
+          monto_llamada:       Number(r.monto_llamada       || 0),
+          monto_whatsapp:      Number(r.monto_whatsapp      || 0),
+          total_cobrado:       Number(r.total_cobrado       || 0),
         });
         if (data.ordenes) setOrdenes(data.ordenes);
-        // Sincronizar duración desde el servidor (evita drift de timezone)
         if (data.turno?.duracion_segundos != null) {
           setDuracionBase(Number(data.turno.duracion_segundos));
           setDuracionBaseAt(Date.now());
           setTickSecs(0);
         }
-        if (data.turno?.hora_apertura_utc) {
-          setHoraAperturaUTC(data.turno.hora_apertura_utc);
-        }
+        if (data.turno?.hora_apertura_utc) setHoraAperturaUTC(data.turno.hora_apertura_utc);
       }
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -94,192 +109,383 @@ const CashRegisterPanel: React.FC<CashRegisterPanelProps> = ({ turno }) => {
     }
   };
 
-  if (loading) {
-    return <div className="text-center py-8 text-gray-600">Cargando datos...</div>;
-  }
+  if (loading) return <div className="text-center py-8 text-gray-600">Cargando datos...</div>;
+  if (!stats) return null;
 
-  const cards = [
-    {
-      title: 'Órdenes Procesadas',
-      value: stats.total_ordenes,
-      icon: <TrendingUp className="text-blue-600" size={32} />,
-      color: 'bg-blue-50 border-blue-200',
-    },
-    {
-      title: 'Efectivo',
-      value: `$${stats.total_efectivo.toLocaleString()}`,
-      icon: <DollarSign className="text-green-600" size={32} />,
-      color: 'bg-green-50 border-green-200',
-    },
-    {
-      title: 'Tarjetas',
-      value: `$${stats.total_tarjeta.toLocaleString()}`,
-      icon: <DollarSign className="text-purple-600" size={32} />,
-      color: 'bg-purple-50 border-purple-200',
-    },
-    {
-      title: 'Total Ingresos',
-      value: `$${stats.total_ingresos.toLocaleString()}`,
-      icon: <DollarSign className="text-red-600" size={32} />,
-      color: 'bg-red-50 border-red-200',
-    },
+  const efectivoInicial = Number(turno.efectivo_inicial || 0);
+  const esperadoEnCaja  = efectivoInicial + stats.total_efectivo;
+  const totalGeneral    = stats.monto_web + stats.monto_presencial + stats.monto_llamada + stats.monto_whatsapp;
+
+  const duracionStr = (() => {
+    const s = duracionBase + tickSecs;
+    if (s < 0) return '0h 0m';
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  })();
+
+  const tabs = [
+    { id: 'conciliacion' as const, label: 'Conciliación de Caja', icon: <DollarSign size={16} /> },
+    { id: 'canales'      as const, label: 'Ventas por Canal',     icon: <TrendingUp size={16} /> },
+    { id: 'pendientes'   as const, label: `Sin Cobrar (${stats.ordenes_sin_cobrar})`, icon: <AlertTriangle size={16} /> },
+    { id: 'detalle'      as const, label: 'Detalle de Pedidos',   icon: <User size={16} /> },
   ];
 
+  const pagoLabel: Record<string, string> = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia', no_pago: 'Sin cobro' };
+  const entregaLabel: Record<string, string> = { domicilio: 'Domicilio', sucursal: 'Sucursal', para_llevar: 'Para Llevar' };
+  const origenColor: Record<string, string> = {
+    web:        'bg-blue-100 text-blue-700',
+    llamada:    'bg-yellow-100 text-yellow-700',
+    presencial: 'bg-purple-100 text-purple-700',
+    whatsapp:   'bg-green-100 text-green-700',
+  };
+
+  const ordenesSinCobrar = ordenes.filter(o => o.payment_method === 'no_pago');
+
   return (
-    <div className="space-y-8">
-      {/* TARJETAS DE ESTADÍSTICAS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {cards.map((card, index) => (
-          <div
-            key={index}
-            className={`border-2 rounded-lg p-6 ${card.color}`}
-          >
-            <div className="flex items-center gap-4">
-              {card.icon}
+    <div className="space-y-6">
+
+      {/* ── TARJETAS RESUMEN ─────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Pedidos',       value: stats.total_ordenes,          icon: <TrendingUp size={24} className="text-blue-600" />,   color: 'bg-blue-50 border-blue-200' },
+          { label: 'Efectivo',      value: fmt(stats.total_efectivo),    icon: <DollarSign size={24} className="text-green-600" />,  color: 'bg-green-50 border-green-200' },
+          { label: 'Tarjeta/Trans', value: fmt(stats.total_tarjeta + stats.total_transferencia), icon: <DollarSign size={24} className="text-purple-600" />, color: 'bg-purple-50 border-purple-200' },
+          { label: 'Sin Cobrar',    value: fmt(stats.monto_sin_cobrar),  icon: <AlertTriangle size={24} className="text-red-500" />, color: stats.ordenes_sin_cobrar > 0 ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200' },
+        ].map((c, i) => (
+          <div key={i} className={`border-2 rounded-lg p-4 ${c.color}`}>
+            <div className="flex items-center gap-3">
+              {c.icon}
               <div>
-                <p className="text-gray-600 text-sm font-medium">{card.title}</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{card.value}</p>
+                <p className="text-gray-500 text-xs font-medium">{c.label}</p>
+                <p className="text-xl font-black text-gray-800 mt-0.5">{c.value}</p>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* INFORMACIÓN DEL TURNO */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">Información del Turno</h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-gray-600 text-sm">Cajero</p>
-            <p className="font-bold text-lg text-gray-800">{turno.cajero_nombre}</p>
+      {/* ── INFO TURNO (compacta) ─────────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-lg px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        {[
+          { label: 'Cajero',          value: turno.cajero_nombre },
+          { label: 'Apertura (hora)', value: (horaAperturaUTC || '—') + ' CDT' },
+          { label: 'Efectivo Inicial',value: fmt(efectivoInicial) },
+          { label: 'Duración',        value: duracionStr },
+        ].map((f, i) => (
+          <div key={i}>
+            <p className="text-gray-400 font-medium">{f.label}</p>
+            <p className="font-bold text-gray-800 mt-0.5">{f.value}</p>
           </div>
-          <div>
-            <p className="text-gray-600 text-sm">Efectivo Inicial</p>
-            <p className="font-bold text-lg text-gray-800">${turno.efectivo_inicial.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-gray-600 text-sm">Hora de Apertura</p>
-            <p className="font-bold text-lg text-gray-800">
-              {horaAperturaUTC || (turno.abierto_at ? turno.abierto_at.split(' ')[1] || '—' : '—')}
-              <span className="text-xs text-gray-400 ml-1">UTC</span>
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-600 text-sm">Duración del Turno</p>
-            <p className="font-bold text-lg text-gray-800">
-              {(() => {
-                const totalSecs = duracionBase + tickSecs;
-                if (totalSecs < 0) return '0h 0m';
-                const h = Math.floor(totalSecs / 3600);
-                const m = Math.floor((totalSecs % 3600) / 60);
-                return `${h}h ${m}m`;
-              })()}
-            </p>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* DETALLE DE PEDIDOS DEL TURNO */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h3 className="text-xl font-bold text-gray-800">Detalle de Pedidos del Turno</h3>
-          <p className="text-sm text-gray-500 mt-1">{ordenes.length} pedido(s) en este turno</p>
+      {/* ── TABS ─────────────────────────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="flex border-b border-gray-200 overflow-x-auto">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setSeccionActiva(tab.id)}
+              className={`flex items-center gap-2 px-5 py-3 text-sm font-bold whitespace-nowrap transition border-b-2 ${
+                seccionActiva === tab.id
+                  ? 'border-red-600 text-red-600 bg-red-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {tab.icon}{tab.label}
+            </button>
+          ))}
         </div>
-        {ordenes.length === 0 ? (
-          <div className="p-8 text-center text-gray-400 font-semibold">Sin pedidos registrados</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-3 text-left">Pedido</th>
-                  <th className="px-4 py-3 text-left">Cliente</th>
-                  <th className="px-4 py-3 text-left">Entrega</th>
-                  <th className="px-4 py-3 text-left">Origen</th>
-                  <th className="px-4 py-3 text-left">Pago</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-left">Cajero / Cobró</th>
-                  <th className="px-4 py-3 text-center">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {ordenes.map((o) => {
-                  const pagoLabel: Record<string, string> = {
-                    efectivo: 'Efectivo', tarjeta: 'Tarjeta', no_pago: 'Sin cobro',
-                  };
-                  const entregaLabel: Record<string, string> = {
-                    domicilio: 'Domicilio', sucursal: 'Sucursal', para_llevar: 'Para Llevar',
-                  };
-                  const origenColor: Record<string, string> = {
-                    web: 'bg-blue-100 text-blue-700',
-                    llamada: 'bg-yellow-100 text-yellow-700',
-                    presencial: 'bg-purple-100 text-purple-700',
-                  };
-                  const cobrador = o.cajero_nombre || o.liquidado_por || (o.liquidado ? 'Caja' : '—');
-                  return (
-                    <tr key={o.order_id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-bold text-gray-900">{o.order_id}</td>
-                      <td className="px-4 py-3 text-gray-700">{o.cliente_nombre || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600 capitalize">
-                        {entregaLabel[o.metodo_entrega || ''] || o.metodo_entrega || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${origenColor[o.order_origin || ''] || 'bg-gray-100 text-gray-600'}`}>
-                          {o.order_origin || '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">
-                        {pagoLabel[o.payment_method || ''] || o.payment_method || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-black text-red-600">
-                        ${Number(o.total || 0).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <User size={12} />
-                          {cobrador}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {o.liquidado ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700 uppercase">Liquidado</span>
-                        ) : (
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                            o.status === 'entregado' ? 'bg-slate-100 text-slate-600' :
-                            o.status === 'listo' ? 'bg-green-100 text-green-700' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>{o.status}</span>
-                        )}
-                      </td>
+
+        <div className="p-6">
+
+          {/* ══ CONCILIACIÓN DE CAJA ══════════════════════════════ */}
+          {seccionActiva === 'conciliacion' && (
+            <div className="max-w-lg mx-auto space-y-3">
+              <h3 className="font-black text-gray-800 text-lg mb-4">Conciliación de Caja — Turno Actual</h3>
+
+              <Row label="Efectivo Inicial (fondo de caja)" value={fmt(efectivoInicial)} neutral />
+              <Row label="+ Ventas cobradas en Efectivo"    value={fmt(stats.total_efectivo)} positive />
+              <div className="border-t-2 border-gray-300 pt-3">
+                <Row label="= Efectivo esperado en caja"   value={fmt(esperadoEnCaja)} bold />
+              </div>
+
+              <div className="h-px bg-gray-100 my-2" />
+
+              <Row label="Ventas en Tarjeta / Transferencia" value={fmt(stats.total_tarjeta + stats.total_transferencia)} neutral />
+              <Row label="Pedidos pendientes de cobro"       value={`${fmt(stats.monto_sin_cobrar)} (${stats.ordenes_sin_cobrar} pedido${stats.ordenes_sin_cobrar !== 1 ? 's' : ''})`} warn={stats.ordenes_sin_cobrar > 0} />
+
+              <div className="border-t-2 border-gray-300 pt-3">
+                <Row label="Total facturado en el turno" value={fmt(totalGeneral)} bold />
+              </div>
+
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                💡 Al contar la caja, deberías encontrar <strong>{fmt(esperadoEnCaja)}</strong>.
+                {stats.ordenes_sin_cobrar > 0 && (
+                  <span className="text-orange-700"> Tienes <strong>{stats.ordenes_sin_cobrar} pedido(s)</strong> pendientes de cobrar por <strong>{fmt(stats.monto_sin_cobrar)}</strong> — cóbralos antes de cerrar.</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ══ VENTAS POR CANAL ══════════════════════════════════ */}
+          {seccionActiva === 'canales' && (
+            <div className="space-y-4">
+              <h3 className="font-black text-gray-800 text-lg mb-4">Ventas por Canal de Venta</h3>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <CanalCard
+                  icon={<Globe size={24} className="text-blue-600" />}
+                  label="Web / App"
+                  color="border-blue-300 bg-blue-50"
+                  pedidos={stats.ordenes_web}
+                  monto={stats.monto_web}
+                  total={totalGeneral}
+                />
+                <CanalCard
+                  icon={<Monitor size={24} className="text-purple-600" />}
+                  label="POS (Presencial)"
+                  color="border-purple-300 bg-purple-50"
+                  pedidos={stats.ordenes_presencial}
+                  monto={stats.monto_presencial}
+                  total={totalGeneral}
+                />
+                <CanalCard
+                  icon={<MessageCircle size={24} className="text-green-600" />}
+                  label="WhatsApp"
+                  color="border-green-300 bg-green-50"
+                  pedidos={stats.ordenes_whatsapp}
+                  monto={stats.monto_whatsapp}
+                  total={totalGeneral}
+                />
+                <CanalCard
+                  icon={<Phone size={24} className="text-yellow-600" />}
+                  label="Llamada"
+                  color="border-yellow-300 bg-yellow-50"
+                  pedidos={stats.ordenes_llamada}
+                  monto={stats.monto_llamada}
+                  total={totalGeneral}
+                />
+              </div>
+
+              {/* Tabla comparativa */}
+              <div className="mt-6 overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Canal</th>
+                      <th className="px-4 py-3 text-right">Pedidos</th>
+                      <th className="px-4 py-3 text-right">Monto</th>
+                      <th className="px-4 py-3 text-right">% del total</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                <tr>
-                  <td colSpan={5} className="px-4 py-3 font-bold text-gray-700">Total del Turno</td>
-                  <td className="px-4 py-3 text-right font-black text-xl text-red-600">
-                    ${ordenes.reduce((s, o) => s + Number(o.total || 0), 0).toLocaleString()}
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {[
+                      { label: '🌐 Web / App',      pedidos: stats.ordenes_web,        monto: stats.monto_web },
+                      { label: '🖥️ POS Presencial', pedidos: stats.ordenes_presencial, monto: stats.monto_presencial },
+                      { label: '💬 WhatsApp',        pedidos: stats.ordenes_whatsapp,   monto: stats.monto_whatsapp },
+                      { label: '📞 Llamada',         pedidos: stats.ordenes_llamada,    monto: stats.monto_llamada },
+                      ...(stats.ordenes_sin_canal > 0
+                        ? [{ label: '❓ Sin canal',  pedidos: stats.ordenes_sin_canal,  monto: 0 }]
+                        : []),
+                    ].map((c, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-semibold text-gray-700">{c.label}</td>
+                        <td className="px-4 py-3 text-right text-gray-600">{c.pedidos}</td>
+                        <td className="px-4 py-3 text-right font-bold text-gray-800">{fmt(c.monto)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="font-bold text-red-600">
+                            {totalGeneral > 0 ? ((c.monto / totalGeneral) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                    <tr>
+                      <td className="px-4 py-3 font-black text-gray-800">TOTAL</td>
+                      <td className="px-4 py-3 text-right font-black text-gray-800">{stats.total_ordenes}</td>
+                      <td className="px-4 py-3 text-right font-black text-red-600 text-base">{fmt(totalGeneral)}</td>
+                      <td className="px-4 py-3 text-right font-black text-gray-600">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
 
-      {/* NOTA */}
-      <div className="bg-blue-50 border border-blue-300 rounded-lg p-6">
-        <p className="text-blue-800 font-semibold mb-2">💡 Nota</p>
-        <p className="text-blue-700 text-sm">
-          Las estadísticas se actualizan automáticamente. Cuando estés listo para cerrar el turno,
-          ve a la pestaña <strong>"Cerrar Turno"</strong> para finalizar.
-        </p>
+          {/* ══ PENDIENTES DE COBRO ═══════════════════════════════ */}
+          {seccionActiva === 'pendientes' && (
+            <div>
+              <h3 className="font-black text-gray-800 text-lg mb-1">Pedidos Sin Cobrar</h3>
+              <p className="text-sm text-gray-400 mb-4">Pedidos registrados como "Sin cobro" que deben cobrarse antes de cerrar el turno.</p>
+
+              {ordenesSinCobrar.length === 0 ? (
+                <div className="text-center py-10">
+                  <CheckCircle className="mx-auto text-green-500 mb-3" size={48} />
+                  <p className="font-bold text-green-700 text-lg">¡Todo cobrado!</p>
+                  <p className="text-gray-400 text-sm">No hay pedidos pendientes de cobro.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4 p-3 bg-orange-50 border border-orange-300 rounded-lg text-sm text-orange-800 font-semibold">
+                    ⚠️ {ordenesSinCobrar.length} pedido(s) pendiente(s) — Total: {fmt(stats.monto_sin_cobrar)}
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Pedido</th>
+                          <th className="px-4 py-3 text-left">Cliente</th>
+                          <th className="px-4 py-3 text-left">Canal</th>
+                          <th className="px-4 py-3 text-left">Entrega</th>
+                          <th className="px-4 py-3 text-left">Hora</th>
+                          <th className="px-4 py-3 text-right">Total</th>
+                          <th className="px-4 py-3 text-center">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {ordenesSinCobrar.map(o => (
+                          <tr key={o.order_id} className="hover:bg-orange-50">
+                            <td className="px-4 py-3 font-mono font-bold text-red-600">{o.order_id}</td>
+                            <td className="px-4 py-3 text-gray-700">{o.cliente_nombre || '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${origenColor[o.order_origin || ''] || 'bg-gray-100 text-gray-600'}`}>
+                                {o.order_origin || '—'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{entregaLabel[o.metodo_entrega || ''] || o.metodo_entrega || '—'}</td>
+                            <td className="px-4 py-3 text-gray-500 text-xs">{new Date(o.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })}</td>
+                            <td className="px-4 py-3 text-right font-black text-gray-800">{fmt(o.total)}</td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-orange-100 text-orange-700 uppercase">{o.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                        <tr>
+                          <td colSpan={5} className="px-4 py-3 font-bold text-gray-700">Total pendiente</td>
+                          <td className="px-4 py-3 text-right font-black text-orange-600 text-base">{fmt(stats.monto_sin_cobrar)}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ══ DETALLE DE PEDIDOS ════════════════════════════════ */}
+          {seccionActiva === 'detalle' && (
+            <div>
+              <h3 className="font-black text-gray-800 text-lg mb-1">Todos los Pedidos del Turno</h3>
+              <p className="text-sm text-gray-400 mb-4">{ordenes.length} pedido(s) registrados en este turno.</p>
+
+              {ordenes.length === 0 ? (
+                <p className="text-center py-8 text-gray-400 font-semibold">Sin pedidos registrados</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Pedido</th>
+                        <th className="px-4 py-3 text-left">Cliente</th>
+                        <th className="px-4 py-3 text-left">Canal</th>
+                        <th className="px-4 py-3 text-left">Entrega</th>
+                        <th className="px-4 py-3 text-left">Pago</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-left">Cobró</th>
+                        <th className="px-4 py-3 text-center">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {ordenes.map(o => {
+                        const cobrador = o.cajero_nombre || o.liquidado_por || (o.liquidado ? 'Caja' : '—');
+                        return (
+                          <tr key={o.order_id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-mono font-bold text-gray-900">{o.order_id}</td>
+                            <td className="px-4 py-3 text-gray-700">{o.cliente_nombre || '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${origenColor[o.order_origin || ''] || 'bg-gray-100 text-gray-600'}`}>
+                                {o.order_origin || '—'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{entregaLabel[o.metodo_entrega || ''] || o.metodo_entrega || '—'}</td>
+                            <td className="px-4 py-3 text-gray-700">{pagoLabel[o.payment_method || ''] || o.payment_method || '—'}</td>
+                            <td className="px-4 py-3 text-right font-black text-red-600">{fmt(o.total)}</td>
+                            <td className="px-4 py-3 text-gray-500 text-xs">{cobrador}</td>
+                            <td className="px-4 py-3 text-center">
+                              {o.liquidado ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-green-100 text-green-700 uppercase">Liquidado</span>
+                              ) : (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  o.status === 'entregado' ? 'bg-slate-100 text-slate-600' :
+                                  o.status === 'listo'     ? 'bg-green-100 text-green-700' :
+                                  o.payment_method === 'no_pago' ? 'bg-orange-100 text-orange-700' :
+                                  'bg-yellow-100 text-yellow-700'
+                                }`}>{o.status}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                      <tr>
+                        <td colSpan={5} className="px-4 py-3 font-bold text-gray-700">Total del Turno</td>
+                        <td className="px-4 py-3 text-right font-black text-xl text-red-600">
+                          {fmt(ordenes.reduce((s, o) => s + Number(o.total || 0), 0))}
+                        </td>
+                        <td colSpan={2} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
 };
+
+/* ── Componentes auxiliares ─────────────────────────────────── */
+
+function Row({ label, value, positive, bold, warn, neutral }: {
+  label: string; value: string;
+  positive?: boolean; bold?: boolean; warn?: boolean; neutral?: boolean;
+}) {
+  return (
+    <div className={`flex justify-between items-center py-1 ${bold ? 'font-black text-base' : 'text-sm'}`}>
+      <span className={warn ? 'text-orange-700 font-semibold' : neutral ? 'text-gray-500' : 'text-gray-700'}>{label}</span>
+      <span className={
+        bold    ? 'text-gray-900 text-lg' :
+        positive? 'text-green-700 font-bold' :
+        warn    ? 'text-orange-600 font-bold' :
+        'text-gray-800 font-semibold'
+      }>{value}</span>
+    </div>
+  );
+}
+
+function CanalCard({ icon, label, color, pedidos, monto, total }: {
+  icon: React.ReactNode; label: string; color: string;
+  pedidos: number; monto: number; total: number;
+}) {
+  const pct = total > 0 ? ((monto / total) * 100).toFixed(1) : '0.0';
+  return (
+    <div className={`border-2 rounded-xl p-5 ${color}`}>
+      <div className="flex items-center gap-3 mb-3">{icon}<span className="font-black text-gray-800">{label}</span></div>
+      <p className="text-3xl font-black text-gray-900">${Number(monto).toLocaleString('es-MX', { minimumFractionDigits: 0 })}</p>
+      <p className="text-sm text-gray-500 mt-1">{pedidos} pedido{pedidos !== 1 ? 's' : ''} · <span className="font-bold text-red-600">{pct}%</span> del total</p>
+      <div className="mt-3 h-2 bg-white/60 rounded-full overflow-hidden">
+        <div className="h-full bg-current rounded-full transition-all" style={{ width: `${pct}%`, opacity: 0.5 }} />
+      </div>
+    </div>
+  );
+}
 
 export default CashRegisterPanel;

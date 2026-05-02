@@ -134,7 +134,7 @@ const ShiftReportModal: React.FC<ShiftReportModalProps> = ({ turno, onClose }) =
             <div>
               <p className="text-gray-600">Efectivo Inicial</p>
               <p className="font-semibold text-gray-800">
-                ${turno.efectivo_inicial.toLocaleString()}
+                ${Number(turno.efectivo_inicial).toLocaleString()}
               </p>
             </div>
             <div>
@@ -175,14 +175,14 @@ const ShiftReportModal: React.FC<ShiftReportModalProps> = ({ turno, onClose }) =
                   <p className="text-sm text-gray-500 text-center py-2">Calculando...</p>
                 ) : (() => {
                   const contado = parseFloat(efectivoReportado || '0');
-                  const esperado = turno.efectivo_inicial + totalEfectivoVentas;
+                  const esperado = Number(turno.efectivo_inicial) + Number(totalEfectivoVentas);
                   const diferencia = contado - esperado;
                   return (
                     <div className="space-y-2 text-sm">
                       <p className="font-bold text-gray-700 mb-3">Resumen del turno:</p>
                       <div className="flex justify-between text-gray-600">
                         <span>Efectivo Inicial:</span>
-                        <span className="font-semibold">${turno.efectivo_inicial.toLocaleString()}</span>
+                        <span className="font-semibold">${Number(turno.efectivo_inicial).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-gray-600">
                         <span>+ Ventas en Efectivo:</span>

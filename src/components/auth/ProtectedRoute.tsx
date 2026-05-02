@@ -21,10 +21,30 @@ export default function ProtectedRoute({ children, role }: ProtectedRouteProps) 
 
     useEffect(() => {
         const token = localStorage.getItem(`capriccio_token_${role}`);
-        if (token) {
-            setIsAuthenticated(true);
+        if (!token) {
+            setIsLoading(false);
+            return;
         }
-        setIsLoading(false);
+
+        // Validar el token con el servidor antes de dar acceso
+        fetch(`${API_URL}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then(res => {
+                if (res.ok) {
+                    setIsAuthenticated(true);
+                } else {
+                    // Token inválido o expirado → limpiar y pedir login
+                    localStorage.removeItem(`capriccio_token_${role}`);
+                    localStorage.removeItem('capriccio_user_role');
+                    localStorage.removeItem('capriccio_username');
+                }
+            })
+            .catch(() => {
+                // Sin conexión: permitir acceso con token local para no bloquear operaciones
+                setIsAuthenticated(true);
+            })
+            .finally(() => setIsLoading(false));
     }, [role]);
 
     const handleLogin = async (e: React.FormEvent) => {
