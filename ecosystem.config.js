@@ -10,6 +10,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3081,
+        N8N_WEBHOOK_SECRET: 'capriccio-n8n-whatsapp-2026',
       }
     },
     {

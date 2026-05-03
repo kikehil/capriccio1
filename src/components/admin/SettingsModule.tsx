@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Settings, MessageCircle, Save, CheckCircle, AlertCircle, Clock, Power, ShieldAlert } from 'lucide-react';
+import { Settings, MessageCircle, Save, CheckCircle, AlertCircle, Clock, Power, ShieldAlert, Pizza } from 'lucide-react';
 import { API_URL } from '@/lib/socket';
 
 interface Config {
@@ -9,6 +9,7 @@ interface Config {
     opening_time?: string;
     closing_time?: string;
     orders_enabled?: string;
+    precio_jumbo?: string;
 }
 
 type SaveStatus = 'idle' | 'ok' | 'error';
@@ -20,13 +21,16 @@ export default function SettingsModule() {
     const [openingTime, setOpeningTime] = useState('10:00');
     const [closingTime, setClosingTime] = useState('21:30');
     const [ordersEnabled, setOrdersEnabled] = useState(true);
+    const [precioJumbo, setPrecioJumbo] = useState(315);
 
     const [waStatus, setWaStatus] = useState<SaveStatus>('idle');
     const [horarioStatus, setHorarioStatus] = useState<SaveStatus>('idle');
     const [toggleStatus, setToggleStatus] = useState<SaveStatus>('idle');
+    const [jumboStatus, setJumboStatus] = useState<SaveStatus>('idle');
     const [savingWa, setSavingWa] = useState(false);
     const [savingHorario, setSavingHorario] = useState(false);
     const [savingToggle, setSavingToggle] = useState(false);
+    const [savingJumbo, setSavingJumbo] = useState(false);
 
     useEffect(() => {
         const token = localStorage.getItem('capriccio_token_admin');
@@ -38,6 +42,7 @@ export default function SettingsModule() {
                 setOpeningTime(data.opening_time || '10:00');
                 setClosingTime(data.closing_time || '21:30');
                 setOrdersEnabled(data.orders_enabled !== 'false');
+                setPrecioJumbo(+(data.precio_jumbo || 315));
             })
             .catch(() => setWaNumber('5218181190257'))
             .finally(() => setLoading(false));
@@ -82,6 +87,20 @@ export default function SettingsModule() {
         } finally {
             setSavingHorario(false);
             setTimeout(() => setHorarioStatus('idle'), 3000);
+        }
+    };
+
+    const saveJumbo = async () => {
+        setSavingJumbo(true);
+        setJumboStatus('idle');
+        try {
+            await patchConfig({ precio_jumbo: String(precioJumbo) });
+            setJumboStatus('ok');
+        } catch {
+            setJumboStatus('error');
+        } finally {
+            setSavingJumbo(false);
+            setTimeout(() => setJumboStatus('idle'), 3000);
         }
     };
 
@@ -224,6 +243,47 @@ export default function SettingsModule() {
                             <AlertCircle size={16} /> Error al guardar
                         </span>
                     )}
+                </div>
+            </div>
+
+            {/* Precio Pizza Jumbo */}
+            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8 space-y-6">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                        <Pizza size={20} className="text-orange-600" />
+                    </div>
+                    <div>
+                        <h3 className="font-black text-slate-900 text-sm uppercase tracking-widest">Precio Pizza Jumbo</h3>
+                        <p className="text-slate-400 text-xs">Precio fijo de la Jumbo (rectangular). Aplica sin importar cuántas especialidades combine el cliente (1 a 4)</p>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Precio ($)</label>
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-black text-lg">$</span>
+                        <input
+                            type="number"
+                            min={1}
+                            value={precioJumbo}
+                            onChange={e => setPrecioJumbo(+(e.target.value) || 315)}
+                            className="w-32 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-capriccio-gold focus:border-transparent"
+                        />
+                    </div>
+                    <p className="text-xs text-slate-400">El bot siempre cotizará la Jumbo a este precio, independientemente de las especialidades.</p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={saveJumbo}
+                        disabled={savingJumbo}
+                        className="flex items-center gap-2 bg-capriccio-gold text-capriccio-dark font-black text-xs uppercase tracking-widest px-6 py-3 rounded-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-60"
+                    >
+                        <Save size={15} />
+                        {savingJumbo ? 'Guardando...' : 'Guardar precio'}
+                    </button>
+                    {jumboStatus === 'ok' && <span className="flex items-center gap-1 text-green-600 text-sm font-bold"><CheckCircle size={16} /> Guardado</span>}
+                    {jumboStatus === 'error' && <span className="flex items-center gap-1 text-red-500 text-sm font-bold"><AlertCircle size={16} /> Error al guardar</span>}
                 </div>
             </div>
 

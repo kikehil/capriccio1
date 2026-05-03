@@ -106,7 +106,7 @@ app.patch('/api/config', adminOnly, async (req, res) => {
 app.get('/api/store-status', async (req, res) => {
     try {
         const r = await db.query(
-            "SELECT key, value FROM negocio_config WHERE key IN ('opening_time','closing_time','orders_enabled')"
+            "SELECT key, value FROM negocio_config WHERE key IN ('opening_time','closing_time','orders_enabled','whatsapp_negocio','precio_jumbo')"
         );
         const cfg = {};
         r.rows.forEach(row => { cfg[row.key] = row.value; });
@@ -114,9 +114,11 @@ app.get('/api/store-status', async (req, res) => {
             opening_time: cfg.opening_time || '10:00',
             closing_time: cfg.closing_time || '21:30',
             orders_enabled: cfg.orders_enabled !== 'false',
+            whatsapp_negocio: cfg.whatsapp_negocio || '',
+            precio_jumbo: +(cfg.precio_jumbo || 315),
         });
     } catch (e) {
-        res.json({ opening_time: '10:00', closing_time: '21:30', orders_enabled: true });
+        res.json({ opening_time: '10:00', closing_time: '21:30', orders_enabled: true, whatsapp_negocio: '', precio_jumbo: 315 });
     }
 });
 
