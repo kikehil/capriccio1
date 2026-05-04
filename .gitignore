@@ -49,7 +49,7 @@ promos.json
 next-env.d.ts
 
 # pwa
-public/sw.js
+# public/sw.js  ← trackeado en git para incluir el push handler sin rebuild
 public/sw.js.map
 public/workbox-*.js
 public/workbox-*.js.map
