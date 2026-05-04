@@ -36,6 +36,9 @@ const io = new Server(server, {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'pizza-capriccio-super-secret-2026';
 
+// Roles cuya sesión NUNCA caduca (pantallas operativas permanentes)
+const ETERNAL_ROLES = ['cocina', 'repartidor', 'caja'];
+
 // --- MIDDLEWARES DE SEGURIDAD ---
 const authorize = (roles = []) => {
     return (req, res, next) => {
@@ -43,9 +46,13 @@ const authorize = (roles = []) => {
         if (!authHeader) return res.status(401).json({ error: 'Token requerido' });
 
         const token = authHeader.split(' ')[1];
-        jwt.verify(token, JWT_SECRET, (err, user) => {
+        // Decodificar sin verificar para conocer el rol y decidir si ignorar expiración
+        const decoded = jwt.decode(token);
+        const ignoreExp = decoded && ETERNAL_ROLES.includes(decoded.role);
+
+        jwt.verify(token, JWT_SECRET, { ignoreExpiration: ignoreExp }, (err, user) => {
             if (err) return res.status(403).json({ error: 'Token inválido o expirado' });
-            
+
             // RBAC: Si se definieron roles, validar que el usuario tenga el permiso adecuado
             if (roles.length > 0 && !roles.includes(user.role)) {
                 return res.status(403).json({ error: 'No tienes permisos para esta acción' });
@@ -137,7 +144,7 @@ app.get('/api/auth/me', authenticateJWT, async (req, res) => {
                 username: u.username,
                 role: u.role,
                 nombre: u.nombre_completo,
-                plan: u.plan || 'basico',
+                plan: u.plan || 'full',
                 negocio: u.negocio_nombre || u.username
             });
         }
@@ -189,23 +196,22 @@ app.post('/api/auth/login', async (req, res) => {
         console.log('[LOGIN] Password vÁlida:', validPass);
 
         if (validPass) {
-            // Roles que permanecen en pantalla de forma continua reciben tokens de larga duración
-            const longLivedRoles = ['cocina', 'repartidor', 'caja'];
-            const tokenExpiry = longLivedRoles.includes(user.role) ? '365d' : '7d';
+            // Roles operativos (cocina/repartidor/caja) reciben tokens SIN expiración — nunca caducan
+            const tokenOptions = ETERNAL_ROLES.includes(user.role) ? {} : { expiresIn: '7d' };
             const token = jwt.sign({
                 id: user.id,
                 username: user.username,
                 role: user.role,
                 negocio_id: user.negocio_id,
-                plan: user.plan || 'basico'
-            }, JWT_SECRET, { expiresIn: tokenExpiry });
+                plan: user.plan || 'full'
+            }, JWT_SECRET, tokenOptions);
 
             return res.json({
                 token,
                 role: user.role,
                 username: user.username,
                 nombre: user.nombre_completo,
-                plan: user.plan || 'basico',
+                plan: user.plan || 'full',
                 negocio: user.negocio_nombre || 'S/N'
             });
         }
@@ -226,15 +232,15 @@ app.post('/api/auth/refresh', (req, res) => {
     // (pantallas de cocina/repartidor permanecen abiertas indefinidamente)
     jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }, (err, user) => {
         if (err) return res.status(403).json({ error: 'Token inválido' });
-        const longLivedRoles = ['cocina', 'repartidor', 'caja'];
-        const tokenExpiry = longLivedRoles.includes(user.role) ? '365d' : '7d';
+        // Roles operativos reciben tokens SIN expiración
+        const refreshTokenOptions = ETERNAL_ROLES.includes(user.role) ? {} : { expiresIn: '7d' };
         const newToken = jwt.sign({
             id: user.id,
             username: user.username,
             role: user.role,
             negocio_id: user.negocio_id,
-            plan: user.plan || 'basico'
-        }, JWT_SECRET, { expiresIn: tokenExpiry });
+            plan: user.plan || 'full'
+        }, JWT_SECRET, refreshTokenOptions);
         res.json({ token: newToken });
     });
 });
@@ -432,7 +438,7 @@ app.get('/api/pedidos', staffOnly, async (req, res) => {
         // Seguridad: Si el usuario es repartidor, solo mostramos pedidos recolectados por él
         // o pedidos listos para ser tomados por cualquiera.
         if (req.user.role === 'repartidor') {
-            baseQuery += " WHERE status IN ('listo', 'en_camino', 'entregado')";
+            baseQuery += " WHERE status IN ('listo', 'en_reparto', 'en_camino', 'entregado')";
         }
         
         const result = await db.query(`${baseQuery} ORDER BY created_at DESC LIMIT 100`, params);
@@ -555,8 +561,8 @@ app.post('/api/pedidos', async (req, res) => {
 
         const metodo_entrega = req.body.metodo_entrega || 'domicilio';
         const pedidoRes = await connection.client.query(
-            `INSERT INTO pedidos (order_id, cliente_nombre, telefono, direccion, referencias, total, lat, lng, negocio_id, telefono_cliente, metodo_entrega, order_origin)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, 'web') RETURNING id`,
+            `INSERT INTO pedidos (order_id, cliente_nombre, telefono, direccion, referencias, total, lat, lng, negocio_id, telefono_cliente, metodo_entrega, order_origin, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, 'web', 'recibido') RETURNING id`,
             [orderId, cliente_nombre, telefono, direccion, referencias, validatedTotal, lat, lng, telefono_cliente || telefono, metodo_entrega]
         );
         const pedidoId = pedidoRes.rows[0].id;
@@ -896,7 +902,10 @@ app.get('/api/admin/stats', adminPanelAccess, async (req, res) => {
         
         const recentRes = await db.query("SELECT * FROM pedidos ORDER BY created_at DESC LIMIT 10");
         const recentOrdersWithItems = await Promise.all(recentRes.rows.map(async (p) => {
-            const items = await db.query('SELECT d.*, d.pizza_nombre as nombre FROM detalle_pedidos d WHERE d.pedido_id = $1', [p.id]);
+            const items = await db.query(
+                'SELECT d.*, d.pizza_nombre as nombre, d.cantidad as quantity FROM detalle_pedidos d WHERE d.pedido_id = $1',
+                [p.id]
+            );
             const itemsWithExtras = await Promise.all(items.rows.map(async (item) => {
                 const extras = await db.query('SELECT extra_nombre as nombre, precio_extra as precio FROM extras_pedidos WHERE detalle_id = $1', [item.id]);
                 return { ...item, extras: extras.rows };
@@ -1104,7 +1113,10 @@ app.get('/api/admin/reportes', adminOnly, async (req, res) => {
         const result = await db.query(queryStr, params);
 
         const data = await Promise.all(result.rows.map(async (p) => {
-            const items = await db.query('SELECT d.*, d.pizza_nombre as nombre FROM detalle_pedidos d WHERE d.pedido_id = $1', [p.id]);
+            const items = await db.query(
+                'SELECT d.*, d.pizza_nombre as nombre, d.cantidad as quantity FROM detalle_pedidos d WHERE d.pedido_id = $1',
+                [p.id]
+            );
             const itemsWithExtras = await Promise.all(items.rows.map(async (item) => {
                 const extras = await db.query('SELECT extra_nombre as nombre, precio_extra as precio FROM extras_pedidos WHERE detalle_id = $1', [item.id]);
                 return { ...item, extras: extras.rows };
@@ -1257,10 +1269,19 @@ io.on('connection', (socket) => {
 // Enviar push a todas las suscripciones de un cliente (por telefono o cliente_id)
 async function sendPushToCliente(clienteIdOrTel, payload) {
     try {
-        // Buscar cliente_id si se pasa teléfono
+        // Buscar cliente_id a partir del teléfono (siempre que sea string,
+        // incluso si es numérico — los teléfonos MX son dígitos puros y
+        // antes isNaN devolvía false para "8331234567", causando overflow INTEGER).
+        // También normalizamos para tolerar variantes con/sin prefijo 52/+52.
         let clienteId = clienteIdOrTel;
-        if (typeof clienteIdOrTel === 'string' && isNaN(clienteIdOrTel)) {
-            const r = await db.query('SELECT id FROM clientes WHERE telefono = $1', [clienteIdOrTel]);
+        if (typeof clienteIdOrTel === 'string') {
+            const digits = clienteIdOrTel.replace(/\D/g, '');
+            // Si llega con prefijo de país 52 (12 dígitos), quitar para obtener los 10 locales
+            const local10 = digits.length === 12 && digits.startsWith('52') ? digits.slice(2) : digits;
+            const r = await db.query(
+                'SELECT id FROM clientes WHERE telefono = $1 OR telefono = $2 OR telefono = $3',
+                [clienteIdOrTel, digits, local10]
+            );
             if (!r.rows.length) return;
             clienteId = r.rows[0].id;
         }
@@ -1717,8 +1738,8 @@ app.post('/api/caja/turno/abrir', authorize(['admin', 'caja', 'responsable']), a
         }
 
         const result = await db.query(
-            `INSERT INTO caja_turno (cajero_id, cajero_nombre, negocio_id, efectivo_inicial)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO caja_turno (cajero_id, cajero_nombre, negocio_id, efectivo_inicial, abierto_at)
+             VALUES ($1, $2, $3, $4, NOW())
              RETURNING id, abierto_at, efectivo_inicial`,
             [req.user.id, req.user.username, negocio_id, efectivo_inicial || 0]
         );
@@ -1978,16 +1999,28 @@ app.get('/api/caja/pedidos/turno/:turno_id', authorize(['admin', 'caja', 'respon
         if (turnoRes.rows.length === 0) return res.status(404).json({ error: 'Turno no encontrado' });
         const turno = turnoRes.rows[0];
         
-        // Usar NOW() de PostgreSQL para evitar discrepancias de zona horaria con JS
+        // Mostrar TODOS los pedidos del turno que NO estén liquidados ni cancelados
+        // Incluye entregados sin cobrar para que caja pueda gestionarlos
         const result = await db.query(
             `SELECT p.* FROM pedidos p
              WHERE p.created_at >= $1
                AND p.created_at <= COALESCE($2, NOW())
-               AND p.status NOT IN ('cancelado', 'entregado')
+               AND p.status != 'cancelado'
+               AND p.liquidado = 0
              ORDER BY p.created_at DESC`,
             [turno.abierto_at, turno.cerrado_at]
         );
-        res.json(result.rows);
+
+        // Incluir items de cada pedido
+        const pedidosConItems = await Promise.all(result.rows.map(async (pedido) => {
+            const itemsRes = await db.query(
+                'SELECT pizza_nombre as nombre, cantidad as quantity, precio_unitario, size, crust FROM detalle_pedidos WHERE pedido_id = $1',
+                [pedido.id]
+            );
+            return { ...pedido, items: itemsRes.rows };
+        }));
+
+        res.json(pedidosConItems);
     } catch (e) {
         console.error('Error al obtener pedidos del turno:', e);
         res.status(500).json({ error: 'Error' });
@@ -2015,21 +2048,26 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
         // Si el turno está abierto, usar hora actual como límite
         const cerradoAt = turno.cerrado_at || new Date().toISOString();
 
-        // Obtener órdenes del turno:
-        //   - Pedidos POS del cajero en la fecha del turno
-        //   - Pedidos web para recoger/consumir en sucursal creados durante el turno
-        // Todos los pedidos creados durante el rango del turno (POS + web, todos los métodos)
+        // Obtener órdenes del turno filtradas por cajero:
+        //   - Pedidos creados por este cajero (cajero_id = turno.cajero_id)
+        //   - Pedidos de domicilio finiquitados por este cajero (liquidado_at dentro del turno)
         const ordenesResult = await db.query(
             `SELECT p.*, COUNT(dp.id) as items_count
              FROM pedidos p
              LEFT JOIN detalle_pedidos dp ON p.id = dp.pedido_id
-             WHERE p.created_at >= $1 AND p.created_at <= $2
+             WHERE (
+               -- Pedidos que este cajero tomó durante el turno
+               (p.cajero_id = $3 AND p.created_at >= $1 AND p.created_at <= $2)
+               OR
+               -- Pedidos que este cajero cobró/finiquitó durante el turno (ej. domicilios)
+               (p.liquidado = 1 AND p.cajero_id = $3 AND p.liquidado_at >= $1 AND p.liquidado_at <= $2)
+             )
              GROUP BY p.id
              ORDER BY p.created_at DESC`,
-            [turno.abierto_at, cerradoAt]
+            [turno.abierto_at, cerradoAt, turno.cajero_id]
         );
 
-        // Resumen de todos los pedidos del turno
+        // Resumen filtrado por cajero (tomados + finiquitados durante el turno)
         const resumenResult = await db.query(
             `SELECT
                 COUNT(*)                                                                              AS total_ordenes,
@@ -2056,8 +2094,12 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
                 -- Total general cobrado
                 SUM(CASE WHEN payment_method != 'no_pago'     THEN COALESCE(total,0) ELSE 0 END)    AS total_cobrado
              FROM pedidos
-             WHERE created_at >= $1 AND created_at <= $2`,
-            [turno.abierto_at, cerradoAt]
+             WHERE (
+               (cajero_id = $3 AND created_at >= $1 AND created_at <= $2)
+               OR
+               (liquidado = 1 AND cajero_id = $3 AND liquidado_at >= $1 AND liquidado_at <= $2)
+             )`,
+            [turno.abierto_at, cerradoAt, turno.cajero_id]
         );
 
         res.json({
@@ -2118,6 +2160,7 @@ app.patch('/api/caja/cobrar-pedido/:order_id', authorize(['admin', 'caja', 'resp
         const pedido = pedidoResult.rows[0];
 
         // Actualizar pedido: marcar como pagado y liquidado
+        // También asignar cajero_id al cajero que finiquitó, para que aparezca en su reporte de turno
         await db.query(
             `UPDATE pedidos
              SET payment_method = $1,
@@ -2125,9 +2168,11 @@ app.patch('/api/caja/cobrar-pedido/:order_id', authorize(['admin', 'caja', 'resp
                  pagado_at = CURRENT_TIMESTAMP,
                  liquidado = 1,
                  liquidado_at = CURRENT_TIMESTAMP,
-                 liquidado_por = $3
+                 liquidado_por = $3,
+                 cajero_id = $5,
+                 cajero_nombre = $3
              WHERE order_id = $4`,
-            [payment_method, monto_recibido || pedido.total, cajero_nombre || 'Cajero', order_id]
+            [payment_method, monto_recibido || pedido.total, cajero_nombre || req.user.username, order_id, req.user.id]
         );
 
         // Registrar en caja_pagos_detalle si hay turno activo
