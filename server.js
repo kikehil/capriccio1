@@ -1306,23 +1306,25 @@ async function sendPushToCliente(clienteIdOrTel, payload) {
 }
 
 // Enviar push a TODOS los clientes suscritos (para promos masivas)
+// Devuelve { ok, total, errores } para poder reportar al admin
 async function sendPushToAll(payload) {
-    try {
-        const subs = await db.query('SELECT endpoint, p256dh, auth FROM push_subscriptions');
-        const msg = JSON.stringify(payload);
-        for (const sub of subs.rows) {
-            try {
-                await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, msg);
-            } catch (e) {
-                if (e.statusCode === 410 || e.statusCode === 404) {
-                    await db.query('DELETE FROM push_subscriptions WHERE endpoint = $1', [sub.endpoint]);
-                }
+    const subs = await db.query('SELECT endpoint, p256dh, auth FROM push_subscriptions');
+    const msg = JSON.stringify(payload);
+    let ok = 0, errores = 0;
+    for (const sub of subs.rows) {
+        try {
+            await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, msg);
+            ok++;
+        } catch (e) {
+            errores++;
+            console.error(`[push-all] Error enviando a ${sub.endpoint.slice(-30)}: HTTP ${e.statusCode || '?'} ${e.message}`);
+            if (e.statusCode === 410 || e.statusCode === 404) {
+                await db.query('DELETE FROM push_subscriptions WHERE endpoint = $1', [sub.endpoint]);
             }
         }
-        console.log(`[push-all] Enviado a ${subs.rows.length} suscripciones`);
-    } catch (e) {
-        console.error('[push-all]', e.message);
     }
+    console.log(`[push-all] Total: ${subs.rows.length} — OK: ${ok} — Errores: ${errores}`);
+    return { total: subs.rows.length, ok, errores };
 }
 
 // ─── LOYALTY HELPERS ─────────────────────────────────────────────────────────
@@ -1594,15 +1596,26 @@ app.delete('/api/push/unsubscribe', authenticateCliente, async (req, res) => {
 app.post('/api/push/promo', adminOnly, async (req, res) => {
     const { titulo, cuerpo, url } = req.body;
     if (!titulo || !cuerpo) return res.status(400).json({ error: 'Título y cuerpo requeridos' });
-    await sendPushToAll({
-        title: titulo,
-        body: cuerpo,
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/icon-72x72.png',
-        url: url || '/',
-        tag: 'promo-' + Date.now(),
-    });
-    res.json({ ok: true, mensaje: 'Notificación enviada a todos los suscriptores' });
+    try {
+        const result = await sendPushToAll({
+            title: titulo,
+            body: cuerpo,
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/icon-72x72.png',
+            url: url || '/',
+            tag: 'promo-' + Date.now(),
+        });
+        if (result.errores > 0 && result.ok === 0) {
+            return res.status(500).json({ error: `Fallo al enviar: ${result.errores} errores. Revisa los logs del servidor (VAPID keys o suscripciones inválidas).` });
+        }
+        const msg = result.total === 0
+            ? 'Sin suscriptores activos'
+            : `Enviada a ${result.ok} de ${result.total} suscriptores${result.errores > 0 ? ` (${result.errores} fallaron)` : ''}`;
+        res.json({ ok: true, mensaje: msg, ...result });
+    } catch (e) {
+        console.error('[push/promo]', e);
+        res.status(500).json({ error: 'Error interno al enviar notificación' });
+    }
 });
 
 // GET /api/push/stats — total suscriptores (solo admin/marketing)
