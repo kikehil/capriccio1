@@ -121,8 +121,13 @@ const CustomerInfoStep: React.FC<StepProps> = ({
     if (!formData.cliente_nombre?.trim()) errs.cliente_nombre = 'El nombre es requerido';
     if (!formData.telefono?.trim()) errs.telefono = 'El teléfono es requerido';
     if (isDomicilio) {
-      if (addressMode === 'manual' && !calleNumero.trim()) errs.direccion = 'La calle es requerida';
-      if (addressMode === 'gps' && !formData.direccion?.trim()) errs.direccion = 'La dirección es requerida';
+      // Si el cliente fue encontrado (y no está editando), formData.direccion ya viene
+      // poblado desde la BD — omitir validación de calleNumero en ese caso.
+      const hasFullAddress = !!formData.direccion?.trim();
+      if (addressMode === 'manual' && !calleNumero.trim() && !hasFullAddress)
+        errs.direccion = 'La calle es requerida';
+      if (addressMode === 'gps' && !formData.direccion?.trim())
+        errs.direccion = 'La dirección es requerida';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
