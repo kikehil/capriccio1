@@ -41,6 +41,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [orderId, setOrderId] = useState('');
+  const [printEnabled, setPrintEnabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('capriccio_caja_print');
+    return saved === 'true'; // default OFF
+  });
 
   // Calcular total desde items si formData.total no fue propagado correctamente
   const computedTotal: number =
@@ -215,8 +220,8 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       setOrderId(result.order_id || result.id || 'SIN_ID');
       setSuccess(true);
 
-      // Imprimir 2 tickets automáticamente para todos los tipos de entrega
-      printBothTickets(result);
+      // Imprimir solo si está activado
+      if (printEnabled) printBothTickets(result);
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -332,8 +337,28 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
         </div>
       </div>
 
+      {/* PRINT TOGGLE */}
+      <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 mt-2">
+        <span className="text-sm font-semibold text-gray-600">🖨️ Imprimir tickets al confirmar</span>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !printEnabled;
+            setPrintEnabled(next);
+            localStorage.setItem('capriccio_caja_print', String(next));
+          }}
+          className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition border-2 ${
+            printEnabled
+              ? 'bg-green-100 border-green-400 text-green-700'
+              : 'bg-gray-100 border-gray-300 text-gray-500'
+          }`}
+        >
+          {printEnabled ? '✓ ON' : 'OFF'}
+        </button>
+      </div>
+
       {/* BUTTONS */}
-      <div className="mt-8 flex gap-3">
+      <div className="mt-4 flex gap-3">
         <button
           onClick={onPrev}
           disabled={loading}

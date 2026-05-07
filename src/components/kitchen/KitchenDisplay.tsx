@@ -56,7 +56,7 @@ const KitchenDisplay = () => {
     const [printEnabled, setPrintEnabled] = useState<boolean>(() => {
         if (typeof window === 'undefined') return true;
         const saved = localStorage.getItem('capriccio_cocina_print');
-        return saved === null ? true : saved === 'true';
+        return saved === null ? false : saved === 'true';
     });
 
     const fetchOrders = async () => {
