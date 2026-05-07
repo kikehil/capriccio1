@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronRight, ChevronLeft } from 'lucide-react';
 import CustomerInfoStep from './steps/CustomerInfoStep';
 import OrderOriginStep from './steps/OrderOriginStep';
 import DeliveryMethodStep from './steps/DeliveryMethodStep';
@@ -31,6 +30,15 @@ interface NewOrderFormProps {
 
 const stepOrder: StepType[] = ['origin', 'delivery', 'customer', 'items', 'payment', 'confirmation'];
 
+const STEP_META: Record<StepType, { label: string; icon: string }> = {
+  origin:       { label: 'Origen',   icon: '📡' },
+  delivery:     { label: 'Entrega',  icon: '🛍️' },
+  customer:     { label: 'Cliente',  icon: '👤' },
+  items:        { label: 'Ítems',    icon: '🛒' },
+  payment:      { label: 'Pago',     icon: '💳' },
+  confirmation: { label: 'Confirmar', icon: '✅' },
+};
+
 const NewOrderForm: React.FC<NewOrderFormProps> = ({ turno }) => {
   const [currentStep, setCurrentStep] = useState<StepType>('origin');
   const [formData, setFormData] = useState<FormData>({
@@ -41,123 +49,91 @@ const NewOrderForm: React.FC<NewOrderFormProps> = ({ turno }) => {
   });
 
   const currentStepIndex = stepOrder.indexOf(currentStep);
-  const isFirstStep = currentStepIndex === 0;
-  const isLastStep = currentStepIndex === stepOrder.length - 1;
 
   const handleNext = () => {
-    if (!isLastStep) {
+    if (currentStepIndex < stepOrder.length - 1)
       setCurrentStep(stepOrder[currentStepIndex + 1]);
-    }
   };
 
   const handlePrev = () => {
-    if (!isFirstStep) {
+    if (currentStepIndex > 0)
       setCurrentStep(stepOrder[currentStepIndex - 1]);
-    }
   };
 
   const handleReset = () => {
     setCurrentStep('origin');
-    setFormData({
-      cliente_nombre: '',
-      telefono: '',
-      items: [],
-      total: 0,
-    });
+    setFormData({ cliente_nombre: '', telefono: '', items: [], total: 0 });
   };
 
   const updateFormData = (updates: Partial<FormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
   };
 
-  // Render step component
   const renderStep = () => {
-    const commonProps = {
-      formData,
-      updateFormData,
-      turno,
-      onNext: handleNext,
-      onPrev: handlePrev,
-    };
-
+    const commonProps = { formData, updateFormData, turno, onNext: handleNext, onPrev: handlePrev };
     switch (currentStep) {
-      case 'origin':
-        return <OrderOriginStep {...commonProps} />;
-      case 'delivery':
-        return <DeliveryMethodStep {...commonProps} />;
-      case 'customer':
-        return <CustomerInfoStep {...commonProps} />;
-      case 'items':
-        return <OrderItemsStep {...commonProps} />;
-      case 'payment':
-        return <PaymentStep {...commonProps} />;
-      case 'confirmation':
-        return <ConfirmationStep {...commonProps} onReset={handleReset} />;
-      default:
-        return null;
+      case 'origin':       return <OrderOriginStep {...commonProps} />;
+      case 'delivery':     return <DeliveryMethodStep {...commonProps} />;
+      case 'customer':     return <CustomerInfoStep {...commonProps} />;
+      case 'items':        return <OrderItemsStep {...commonProps} />;
+      case 'payment':      return <PaymentStep {...commonProps} />;
+      case 'confirmation': return <ConfirmationStep {...commonProps} onReset={handleReset} />;
+      default: return null;
     }
   };
 
   return (
-    <div className="w-full mx-auto">
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        {/* Progress Indicator */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
-            {stepOrder.map((step, index) => (
+    <div className="max-w-2xl mx-auto">
+      {/* ── STEP INDICATOR ────────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-2xl px-4 sm:px-6 py-4 mb-5 shadow-sm">
+        <div className="flex items-center">
+          {stepOrder.map((step, index) => {
+            const isDone    = index < currentStepIndex;
+            const isActive  = index === currentStepIndex;
+            const isPending = index > currentStepIndex;
+            return (
               <React.Fragment key={step}>
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition ${
-                    index <= currentStepIndex
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                >
-                  {index + 1}
+                {/* Step dot + label */}
+                <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                  <div
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center font-black text-xs sm:text-sm transition-all duration-200 ${
+                      isActive  ? 'bg-red-600 text-white shadow-[0_0_0_4px_rgba(220,38,38,0.15)]' :
+                      isDone    ? 'bg-red-600 text-white' :
+                      'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {isDone ? '✓' : STEP_META[step].icon}
+                  </div>
+                  <span
+                    className={`hidden sm:block text-[9px] font-black uppercase tracking-wide leading-none text-center ${
+                      isActive ? 'text-red-600' : isDone ? 'text-gray-500' : 'text-gray-300'
+                    }`}
+                  >
+                    {STEP_META[step].label}
+                  </span>
                 </div>
+
+                {/* Connector line */}
                 {index < stepOrder.length - 1 && (
                   <div
-                    className={`flex-1 h-1 mx-2 transition ${
+                    className={`flex-1 h-[3px] mx-1 sm:mx-2 rounded-full transition-all duration-300 ${
                       index < currentStepIndex ? 'bg-red-600' : 'bg-gray-200'
                     }`}
                   />
                 )}
               </React.Fragment>
-            ))}
-          </div>
-          <p className="text-center text-sm text-gray-600">
-            Paso {currentStepIndex + 1} de {stepOrder.length}
-          </p>
+            );
+          })}
         </div>
+        {/* Mobile step label */}
+        <p className="sm:hidden text-center text-xs font-black text-red-600 mt-2.5">
+          {STEP_META[currentStep].icon} {STEP_META[currentStep].label} — Paso {currentStepIndex + 1} de {stepOrder.length}
+        </p>
+      </div>
 
-        {/* Step Content */}
+      {/* ── STEP CONTENT ─────────────────────────────── */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-6 shadow-sm">
         {renderStep()}
-
-        {/* Navigation Buttons */}
-        {currentStep !== 'confirmation' && (
-          <div className="mt-8 flex gap-4">
-            <button
-              onClick={handlePrev}
-              disabled={isFirstStep}
-              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition ${
-                isFirstStep
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
-              }`}
-            >
-              <ChevronLeft size={20} />
-              Atrás
-            </button>
-
-            <button
-              onClick={handleNext}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition"
-            >
-              Siguiente
-              <ChevronRight size={20} />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

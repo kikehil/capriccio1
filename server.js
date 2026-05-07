@@ -309,11 +309,11 @@ app.get('/api/productos', async (req, res) => {
     }
 });
 
-// GET /api/menu/productos — Catálogo público para bot WhatsApp (solo activos)
+// GET /api/menu/productos — Catálogo público para portal y bot WhatsApp (solo activos)
 app.get('/api/menu/productos', async (req, res) => {
     try {
         const r = await db.query(
-            `SELECT nombre, descripcion, precio, categoria, precios
+            `SELECT id, nombre, descripcion, precio, categoria, precios, ingredientes, imagen
              FROM productos WHERE activo = 1 ORDER BY categoria, nombre`
         );
         const productos = r.rows.map(p => {
@@ -321,12 +321,19 @@ app.get('/api/menu/productos', async (req, res) => {
             if (typeof precios === 'string') {
                 try { precios = JSON.parse(precios); } catch { precios = {}; }
             }
+            let ingredientes = p.ingredientes;
+            if (typeof ingredientes === 'string') {
+                try { ingredientes = JSON.parse(ingredientes); } catch { ingredientes = []; }
+            }
             return {
+                id: p.id,
                 nombre: p.nombre,
                 categoria: p.categoria || 'pizzas',
                 precio_base: Number(p.precio || 0),
                 precios: precios || {},
-                descripcion: p.descripcion || ''
+                descripcion: p.descripcion || '',
+                ingredientes: Array.isArray(ingredientes) ? ingredientes : [],
+                imagen: p.imagen || ''
             };
         });
         res.json({ ok: true, productos });
@@ -336,11 +343,12 @@ app.get('/api/menu/productos', async (req, res) => {
 });
 
 app.post('/api/productos', adminOnly, async (req, res) => {
-    const { nombre, descripcion, precio, imagen, categoria, activo, precios } = req.body;
+    const { nombre, descripcion, precio, imagen, categoria, activo, precios, ingredientes } = req.body;
     try {
         const result = await db.query(
-            'INSERT INTO productos (nombre, descripcion, precio, imagen, categoria, activo, precios) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [nombre, descripcion, precio, imagen, categoria, activo ?? true, precios ?? null]
+            'INSERT INTO productos (nombre, descripcion, precio, imagen, categoria, activo, precios, ingredientes) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+            [nombre, descripcion, precio, imagen, categoria, activo ?? true, precios ?? null,
+             ingredientes ? JSON.stringify(ingredientes) : '[]']
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -350,10 +358,19 @@ app.post('/api/productos', adminOnly, async (req, res) => {
 
 app.patch('/api/productos/:id', adminOnly, async (req, res) => {
     const { id } = req.params;
-    const fields = req.body;
-    const keys = Object.keys(fields);
-    if (keys.length === 0) return res.sendStatus(400);
+    const raw = req.body;
+    if (Object.keys(raw).length === 0) return res.sendStatus(400);
 
+    // Serialize JSON fields
+    const fields = { ...raw };
+    if (fields.precios && typeof fields.precios !== 'string') {
+        fields.precios = JSON.stringify(fields.precios);
+    }
+    if (fields.ingredientes && typeof fields.ingredientes !== 'string') {
+        fields.ingredientes = JSON.stringify(fields.ingredientes);
+    }
+
+    const keys = Object.keys(fields);
     const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(', ');
     const values = [...Object.values(fields), id];
 
@@ -603,14 +620,38 @@ app.post('/api/pedidos', async (req, res) => {
         const shortId = orderId.split('-')[1]?.toUpperCase() || orderId.slice(-6).toUpperCase();
         const esEntregaLocal = metodo_entrega === 'sucursal' || metodo_entrega === 'para_llevar';
         const tiempoEstimado = esEntregaLocal ? '20-25 minutos' : '~40 minutos';
-        const resumenItems = validatedItems.map(i =>
-            `• ${i.quantity}x ${i.nombre}${i.size ? ` (${i.size})` : ''} — $${i.totalItemPrice * i.quantity}`
-        ).join('\n');
+        const resumenItems = validatedItems.map(i => {
+            let line = `• ${i.quantity}x ${i.nombre}${i.size ? ` (${i.size})` : ''}${i.crust ? ` + ${i.crust}` : ''} — $${i.totalItemPrice * i.quantity}`;
+            if (i.sauce) line += `\n   🥣 Salsa: ${i.sauce}`;
+            if (i.extras && i.extras.length > 0) {
+                const grouped = {};
+                for (const ex of i.extras) {
+                    const key = ex.nombre;
+                    if (grouped[key]) grouped[key].qty++;
+                    else grouped[key] = { nombre: ex.nombre, precio: ex.precio, qty: 1 };
+                }
+                const extrasStr = Object.values(grouped)
+                    .map(g => `   ↳ ${g.qty > 1 ? `${g.qty}x ` : ''}${g.nombre} (+$${g.precio * g.qty})`)
+                    .join('\n');
+                line += `\n${extrasStr}`;
+            }
+            if (i.nota) line += `\n   📝 Nota: ${i.nota}`;
+            return line;
+        }).join('\n');
 
         const msgCliente = `🍕 *¡Hola ${cliente_nombre}!*\n\nTu pedido *#${shortId}* fue recibido correctamente.\n\n*Resumen:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*\n⏱ Tiempo estimado: ${tiempoEstimado}\n\n¡Gracias por tu preferencia! 🙌`;
 
+        // Pago del cliente (web)
+        const paymentMethod = req.body.payment_method || 'efectivo';
+        const montoPago = parseFloat(req.body.monto_pago) || 0;
+        const pagoLabel = paymentMethod === 'transferencia'
+            ? '💳 *Pago:* Transferencia (pendiente comprobante)'
+            : montoPago > 0
+                ? `💵 *Pago:* Efectivo | Paga con $${montoPago} | Cambio: $${Math.max(0, montoPago - validatedTotal)}`
+                : '💵 *Pago:* Efectivo';
+
         const modoEntrega = metodo_entrega === 'domicilio' ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}${referencias ? `\n📝 Ref: ${referencias}` : ''}` : `🏪 *Recoger en sucursal*`;
-        const msgNegocio = `🔔 *NUEVO PEDIDO #${shortId}*\n🌐 *Origen: Página Web*\n\n👤 ${cliente_nombre}\n📞 ${telefono}\n${modoEntrega}\n\n*Artículos:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*`;
+        const msgNegocio = `🔔 *NUEVO PEDIDO #${shortId}*\n🌐 *Origen: Página Web*\n\n👤 ${cliente_nombre}\n📞 ${telefono}\n${modoEntrega}\n\n*Artículos:*\n${resumenItems}\n\n💰 *Total: $${validatedTotal}*\n${pagoLabel}`;
 
         // Enviar WhatsApp al cliente y al negocio
         const clienteNum = (telefono_cliente || telefono || '').replace(/\D/g, '');
@@ -1201,6 +1242,40 @@ io.on('connection', (socket) => {
 // ============================================================
 // MÓDULO DE CLIENTES — LOYALTY PROGRAM
 // ============================================================
+
+// Migración: agregar columna ingredientes + auto-poblar desde descripción
+(async () => {
+    try {
+        await db.query(`ALTER TABLE productos ADD COLUMN IF NOT EXISTS ingredientes TEXT DEFAULT '[]'`);
+        console.log('✅ [DB] Columna ingredientes OK');
+
+        // Auto-poblar ingredientes para pizzas que aún tienen array vacío
+        const INGREDIENT_KEYWORDS = [
+            'pepperoni', 'peperoni', 'champiñón', 'champiñon', 'piña',
+            'tocino', 'bacon', 'queso', 'mozzarella', 'jamón', 'jamon',
+            'chorizo', 'jalapeño', 'jalapeno', 'jalapeños', 'pollo',
+            'salami', 'cebolla', 'pimiento', 'salchicha', 'mushroom',
+        ];
+        const emptyRows = await db.query(
+            `SELECT id, nombre, descripcion FROM productos
+             WHERE (ingredientes IS NULL OR ingredientes = '[]')
+             AND LOWER(categoria) LIKE '%pizza%'`
+        );
+        for (const p of emptyRows.rows) {
+            const texto = ((p.descripcion || '') + ' ' + (p.nombre || '')).toLowerCase();
+            const encontrados = INGREDIENT_KEYWORDS.filter(k => texto.includes(k));
+            if (encontrados.length > 0) {
+                await db.query(
+                    `UPDATE productos SET ingredientes = $1 WHERE id = $2`,
+                    [JSON.stringify(encontrados), p.id]
+                );
+                console.log(`🧂 [DB] Ingredientes auto-poblados para "${p.nombre}": ${encontrados.join(', ')}`);
+            }
+        }
+    } catch (e) {
+        console.warn('⚠️ [DB] Migración ingredientes:', e.message);
+    }
+})();
 
 // Inicializar tablas clientes al arranque si no existen
 (async () => {
@@ -1979,10 +2054,47 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
             const modoEntregaCaja = metodo_entrega === 'domicilio'
                 ? `🚗 *A domicilio*\n📍 ${direccion || 'Sin dirección'}`
                 : metodo_entrega === 'para_llevar' ? '🏃 *Para llevar*' : '🏪 *Recoger en sucursal*';
-            const resumenCaja = items.map(i =>
-                `• ${i.cantidad || i.quantity}x ${i.pizza_nombre || i.nombre}${i.size ? ` (${i.size})` : ''} — $${(i.precio_unitario || i.totalItemPrice) * (i.cantidad || i.quantity)}`
-            ).join('\n');
-            const metodoPagoCaja = payment_method === 'tarjeta' ? '💳 Tarjeta' : payment_method === 'no_pago' ? '⏳ Pago en entrega' : '💵 Efectivo';
+            const resumenCaja = items.map(i => {
+                const qty = i.cantidad || i.quantity || 1;
+                const unitP = i.precio_unitario || i.totalItemPrice || 0;
+                let line = `• ${qty}x ${i.pizza_nombre || i.nombre}${i.size ? ` (${i.size})` : ''}${i.crust && i.crust !== 'sin-orilla' ? ` + ${i.crust}` : ''} — $${unitP * qty}`;
+                if (i.sauce) line += `\n   🥣 Salsa: ${i.sauce}`;
+                if (i.extras && i.extras.length > 0) {
+                    const grouped = {};
+                    for (const ex of i.extras) {
+                        if (grouped[ex.nombre]) grouped[ex.nombre].qty++;
+                        else grouped[ex.nombre] = { nombre: ex.nombre, precio: ex.precio || 0, qty: 1 };
+                    }
+                    const extrasStr = Object.values(grouped)
+                        .map(g => `   ↳ ${g.qty > 1 ? `${g.qty}x ` : ''}${g.nombre} (+$${g.precio * g.qty})`)
+                        .join('\n');
+                    line += `\n${extrasStr}`;
+                }
+                if (i.nota) line += `\n   📝 Nota: ${i.nota}`;
+                return line;
+            }).join('\n');
+
+            let metodoPagoCaja;
+            if (payment_method === 'tarjeta') {
+                metodoPagoCaja = '💳 *Pago:* Tarjeta';
+            } else if (payment_method === 'transferencia') {
+                metodoPagoCaja = '🏦 *Pago:* Transferencia';
+            } else if (payment_method === 'no_pago') {
+                metodoPagoCaja = '⏳ *Pago:* Al entregar';
+            } else {
+                // efectivo
+                const montoEfectivo = Number(monto_recibido) || 0;
+                if (montoEfectivo > 0) {
+                    const cambioEfectivo = Math.max(0, montoEfectivo - total);
+                    if (metodo_entrega === 'domicilio') {
+                        metodoPagoCaja = `💵 *Pago:* Efectivo | Paga con $${montoEfectivo} | Llevar cambio: $${cambioEfectivo}`;
+                    } else {
+                        metodoPagoCaja = `💵 *Pago:* Efectivo | Recibido: $${montoEfectivo} | Cambio: $${cambioEfectivo}`;
+                    }
+                } else {
+                    metodoPagoCaja = '💵 *Pago:* Efectivo';
+                }
+            }
 
             // Mensaje para el NEGOCIO
             const msgNegocioCaja = `🔔 *NUEVO PEDIDO #${shortIdCaja}*\n${origenLabel}\n\n👤 ${cliente_nombre}\n📞 ${telefono || 'Sin teléfono'}\n${modoEntregaCaja}\n\n*Artículos:*\n${resumenCaja}\n\n💰 *Total: $${total}*\n${metodoPagoCaja}`;
@@ -2126,31 +2238,216 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
     }
 });
 
-// GET /api/caja/buscar-pedido?q=... — Busca un pedido por número para cobro en caja
+// GET /api/caja/buscar-pedido?q=... — Busca un pedido por número o teléfono para cobro/reimpresión/cancelación
 app.get('/api/caja/buscar-pedido', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
     const { q } = req.query;
     if (!q || String(q).trim().length < 2) {
         return res.status(400).json({ error: 'Ingresa al menos 2 caracteres' });
     }
     const search = `%${String(q).trim().toUpperCase()}%`;
+    const phoneSearch = `%${String(q).trim()}%`;
     try {
         const result = await db.query(
             `SELECT p.*
              FROM pedidos p
              WHERE UPPER(p.order_id) LIKE $1
+                OR p.telefono LIKE $2
              ORDER BY p.created_at DESC
-             LIMIT 5`,
-            [search]
+             LIMIT 10`,
+            [search, phoneSearch]
         );
-        // Parsear items (JSON string)
-        const rows = result.rows.map((r) => ({
-            ...r,
-            items: typeof r.items === 'string' ? (() => { try { return JSON.parse(r.items); } catch { return []; } })() : (r.items || []),
+        // Para cada pedido, obtener items desde detalle_pedidos
+        const rows = await Promise.all(result.rows.map(async (r) => {
+            const itemsRes = await db.query(
+                `SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity,
+                        d.precio_unitario as "precio_unitario", d.precio_unitario as "totalItemPrice",
+                        d.size, d.crust, d.nota, d.sauce
+                 FROM detalle_pedidos d WHERE d.pedido_id = $1`,
+                [r.id]
+            );
+            return { ...r, items: itemsRes.rows };
         }));
         res.json(rows);
     } catch (e) {
         console.error('Error buscar-pedido:', e);
         res.status(500).json({ error: 'Error en búsqueda' });
+    }
+});
+
+// PATCH /api/caja/cancelar-pedido/:order_id — Cancela un pedido con o sin supervisión
+app.patch('/api/caja/cancelar-pedido/:order_id', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    const { order_id } = req.params;
+    const { supervisor_username, supervisor_password, motivo } = req.body;
+
+    const SIMPLE_CANCEL_STATUSES = ['recibido', 'pendiente'];
+    const SUPERVISED_STATUSES = ['en_preparacion', 'preparando', 'listo', 'en_reparto', 'entregado'];
+
+    try {
+        // Obtener el pedido
+        const pedidoRes = await db.query('SELECT * FROM pedidos WHERE order_id = $1', [order_id]);
+        if (pedidoRes.rows.length === 0) return res.status(404).json({ error: 'Pedido no encontrado' });
+        const pedido = pedidoRes.rows[0];
+
+        if (pedido.status === 'cancelado') {
+            return res.status(400).json({ error: 'El pedido ya está cancelado' });
+        }
+
+        if (SIMPLE_CANCEL_STATUSES.includes(pedido.status)) {
+            // Cancelación directa — no requiere supervisor
+            await db.query(
+                `UPDATE pedidos SET status = 'cancelado', updated_at = NOW() WHERE order_id = $1`,
+                [order_id]
+            );
+            io.emit('pedido_status_update', { order_id, status: 'cancelado' });
+            return res.json({ ok: true, order_id, status: 'cancelado', supervised: false });
+        }
+
+        if (SUPERVISED_STATUSES.includes(pedido.status)) {
+            // Se requieren credenciales de supervisor
+            if (!supervisor_username || !supervisor_password) {
+                return res.status(403).json({ error: 'Se requieren credenciales de supervisor para cancelar este pedido', requires_supervisor: true });
+            }
+
+            // Verificar que el supervisor no es el cajero actual (req.user viene del token JWT)
+            const currentUsername = req.user?.username;
+            if (supervisor_username === currentUsername) {
+                return res.status(403).json({ error: 'El supervisor debe ser un usuario diferente al cajero activo' });
+            }
+
+            // Buscar supervisor en la base de datos
+            const supRes = await db.query(
+                `SELECT * FROM usuarios WHERE username = $1 AND activo = TRUE`,
+                [supervisor_username]
+            );
+            if (supRes.rows.length === 0) {
+                return res.status(403).json({ error: 'Supervisor no encontrado o inactivo' });
+            }
+            const supervisor = supRes.rows[0];
+
+            // Verificar contraseña
+            const validPass = await bcrypt.compare(supervisor_password, supervisor.password);
+            if (!validPass) {
+                return res.status(403).json({ error: 'Contraseña de supervisor incorrecta' });
+            }
+
+            // Verificar rol del supervisor (admin o caja)
+            if (!['admin', 'caja', 'responsable'].includes(supervisor.role)) {
+                return res.status(403).json({ error: 'El supervisor no tiene permisos suficientes' });
+            }
+
+            // Cancelar el pedido
+            await db.query(
+                `UPDATE pedidos SET status = 'cancelado', updated_at = NOW() WHERE order_id = $1`,
+                [order_id]
+            );
+            io.emit('pedido_status_update', { order_id, status: 'cancelado' });
+            return res.json({ ok: true, order_id, status: 'cancelado', supervised: true, supervisor: supervisor.nombre_completo || supervisor_username });
+        }
+
+        return res.status(400).json({ error: `No se puede cancelar un pedido con estatus: ${pedido.status}` });
+    } catch (e) {
+        console.error('Error cancelar-pedido:', e);
+        res.status(500).json({ error: 'Error al cancelar pedido' });
+    }
+});
+
+// GET /api/caja/buscar-cliente?telefono=XXX — Lookup customer by phone for auto-fill
+app.get('/api/caja/buscar-cliente', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    const { telefono } = req.query;
+    const tel = String(telefono || '').replace(/\D/g, '');
+    if (tel.length < 8) return res.json({ found: false });
+    try {
+        // 1. Check pedidos history (most recent order by this phone)
+        const pedidoRes = await db.query(
+            `SELECT cliente_nombre, telefono, direccion, referencias,
+                    COUNT(*) OVER (PARTITION BY telefono)::int AS pedidos_count,
+                    MAX(created_at) OVER (PARTITION BY telefono) AS last_order_date
+             FROM pedidos
+             WHERE telefono LIKE $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [`%${tel}%`]
+        );
+        if (pedidoRes.rows.length > 0) {
+            const r = pedidoRes.rows[0];
+            return res.json({
+                found: true,
+                cliente_nombre: r.cliente_nombre || '',
+                telefono: r.telefono || tel,
+                direccion: r.direccion || '',
+                referencias: r.referencias || '',
+                pedidos_count: parseInt(r.pedidos_count) || 1,
+                last_order_date: r.last_order_date,
+                source: 'pedidos'
+            });
+        }
+        // 2. Check portal clientes table
+        const clienteRes = await db.query(
+            `SELECT nombre, telefono FROM clientes WHERE telefono = $1 AND verificado = 1 LIMIT 1`,
+            [tel]
+        );
+        if (clienteRes.rows.length > 0) {
+            const c = clienteRes.rows[0];
+            return res.json({
+                found: true,
+                cliente_nombre: c.nombre || '',
+                telefono: c.telefono || tel,
+                direccion: '',
+                referencias: '',
+                pedidos_count: 0,
+                source: 'portal'
+            });
+        }
+        return res.json({ found: false });
+    } catch (e) {
+        console.error('Error buscar-cliente:', e);
+        res.json({ found: false });
+    }
+});
+
+// GET /api/caja/productos-mgmt — Todos los productos con conteo de ventas para gestión POS
+app.get('/api/caja/productos-mgmt', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT p.id, p.nombre, p.descripcion, p.precio, p.categoria,
+                   p.activo, p.imagen,
+                   COALESCE((
+                       SELECT COUNT(*)::int FROM detalle_pedidos d
+                       WHERE LOWER(d.pizza_nombre) LIKE '%' || LOWER(p.nombre) || '%'
+                   ), 0) AS veces_pedido
+            FROM productos p
+            ORDER BY p.categoria, p.nombre
+        `);
+        const rows = result.rows.map(p => ({
+            ...p,
+            activo: p.activo === 1 || p.activo === true
+        }));
+        res.json(rows);
+    } catch (e) {
+        console.error('Error productos-mgmt:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// PATCH /api/caja/productos/:id/toggle-activo — Activar/desactivar producto desde POS
+app.patch('/api/caja/productos/:id/toggle-activo', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const cur = await db.query('SELECT activo FROM productos WHERE id = $1', [id]);
+        if (cur.rows.length === 0) return res.status(404).json({ error: 'Producto no encontrado' });
+        const currentActivo = cur.rows[0].activo === 1 || cur.rows[0].activo === true;
+        const newActivo = !currentActivo;
+        const updated = await db.query(
+            'UPDATE productos SET activo = $1 WHERE id = $2 RETURNING id, nombre, activo',
+            [newActivo ? 1 : 0, id]
+        );
+        // Notify clients of menu change
+        const allProducts = await db.query('SELECT * FROM productos ORDER BY id ASC');
+        io.emit('menu_actualizado', allProducts.rows);
+        res.json({ ok: true, id: updated.rows[0].id, nombre: updated.rows[0].nombre, activo: newActivo });
+    } catch (e) {
+        console.error('Error toggle-activo:', e);
+        res.status(500).json({ error: e.message });
     }
 });
 

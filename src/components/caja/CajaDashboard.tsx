@@ -1,26 +1,32 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Clock, Plus, Eye, BarChart3, LogOut, Search } from 'lucide-react';
+import { Clock, Plus, Eye, BarChart3, LogOut, Search, Package } from 'lucide-react';
 import NewOrderForm from './NewOrderForm';
 import ActiveOrdersList from './ActiveOrdersList';
 import CashRegisterPanel from './CashRegisterPanel';
 import ShiftReportModal from './ShiftReportModal';
 import BuscarPedidoModal from './BuscarPedidoModal';
+import ProductManagementPanel from './ProductManagementPanel';
 import { CajaTurno } from '@/data/caja-types';
 import { API_URL } from '@/lib/socket';
 
+type TabId = 'nuevo' | 'ordenes' | 'caja' | 'productos' | 'cerrar';
+
 interface TabConfig {
-  id: 'nuevo' | 'ordenes' | 'caja' | 'cerrar';
+  id: TabId;
   label: string;
+  shortLabel: string;
   icon: React.ReactNode;
+  emoji: string;
 }
 
 const tabs: TabConfig[] = [
-  { id: 'nuevo', label: 'Nuevo Pedido', icon: <Plus size={20} /> },
-  { id: 'ordenes', label: 'Órdenes Activas', icon: <Eye size={20} /> },
-  { id: 'caja', label: 'Caja & Reportes', icon: <BarChart3 size={20} /> },
-  { id: 'cerrar', label: 'Cerrar Turno', icon: <Clock size={20} /> },
+  { id: 'nuevo',    label: 'Nuevo Pedido',    shortLabel: 'Nuevo',     icon: <Plus size={20} />,    emoji: '➕' },
+  { id: 'ordenes',  label: 'Órdenes Activas', shortLabel: 'Órdenes',   icon: <Eye size={20} />,     emoji: '📋' },
+  { id: 'caja',     label: 'Caja & Reportes', shortLabel: 'Caja',      icon: <BarChart3 size={20} />, emoji: '💰' },
+  { id: 'productos',label: 'Productos',        shortLabel: 'Productos', icon: <Package size={20} />, emoji: '🛍️' },
+  { id: 'cerrar',   label: 'Cerrar Turno',    shortLabel: 'Cerrar',    icon: <Clock size={20} />,   emoji: '🔒' },
 ];
 
 interface CajaDashboardProps {
@@ -30,22 +36,19 @@ interface CajaDashboardProps {
 }
 
 const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'nuevo' | 'ordenes' | 'caja' | 'cerrar'>('nuevo');
+  const [activeTab, setActiveTab] = useState<TabId>('nuevo');
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showBuscarModal, setShowBuscarModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [currentTime, setCurrentTime] = useState(() => {
-    const now = new Date();
-    return now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
-  });
+  const [currentTime, setCurrentTime] = useState(() =>
+    new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+  );
 
   useEffect(() => {
-    const tick = () => {
-      const now = new Date();
-      setCurrentTime(now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true }));
-    };
-    const timer = setInterval(tick, 1000);
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true }));
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -56,11 +59,10 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('capriccio_token_caja')}`
+          'Authorization': `Bearer ${localStorage.getItem('capriccio_token_caja')}`,
         },
-        body: JSON.stringify({ efectivo_inicial })
+        body: JSON.stringify({ efectivo_inicial }),
       });
-
       if (!response.ok) throw new Error('Error al abrir turno');
       const newTurno = await response.json();
       onTurnoCreated(newTurno);
@@ -73,44 +75,44 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
     }
   };
 
+  /* ── No turno: abrir turno screen ──────────────── */
   if (!turno) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-xl p-8 max-w-md w-full">
+        <div className="bg-white rounded-2xl shadow-xl p-6 sm:p-8 max-w-md w-full border border-gray-100">
           <div className="text-center mb-6">
-            <Clock className="mx-auto text-red-600 mb-4" size={48} />
-            <h2 className="text-2xl font-bold text-gray-800">Iniciar Turno</h2>
+            <div className="text-6xl mb-3">🍕</div>
+            <h2 className="text-2xl font-black text-gray-900">Iniciar Turno</h2>
+            <p className="text-sm text-gray-500 mt-1">Capriccio POS</p>
           </div>
-
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Efectivo Inicial ($)
+              <label className="block text-xs font-black uppercase tracking-widest text-gray-500 mb-2">
+                💵 Efectivo Inicial ($)
               </label>
               <input
                 type="number"
                 id="efectivo_inicial"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900 bg-white"
-                placeholder="Ej: 50000"
+                className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-red-600 outline-none text-gray-900 bg-white text-xl font-bold transition"
+                placeholder="0"
                 defaultValue="0"
+                inputMode="numeric"
               />
-              <p className="text-xs text-gray-500 mt-1">Dinero para dar cambio (caja chica)</p>
+              <p className="text-xs text-gray-400 mt-1.5 font-medium">Dinero para dar cambio (caja chica)</p>
             </div>
-
             <button
               onClick={() => {
-                const value = (document.getElementById('efectivo_inicial') as HTMLInputElement)?.value || '0';
-                handleOpenShift(parseFloat(value));
+                const val = (document.getElementById('efectivo_inicial') as HTMLInputElement)?.value || '0';
+                handleOpenShift(parseFloat(val));
               }}
               disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold py-3 rounded-lg transition"
+              className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-black py-4 rounded-xl transition text-base active:scale-95"
             >
-              {loading ? 'Abriendo...' : 'Abrir Turno'}
+              {loading ? '⌛ Abriendo...' : '🚀 Abrir Turno'}
             </button>
-
             <button
               onClick={onLogout}
-              className="w-full text-red-600 font-semibold py-2 border border-red-600 rounded-lg hover:bg-red-50 transition"
+              className="w-full text-gray-500 font-semibold py-2.5 border-2 border-gray-200 rounded-xl hover:bg-gray-50 transition text-sm"
             >
               Cerrar Sesión
             </button>
@@ -120,87 +122,137 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
     );
   }
 
+  /* ── Main dashboard ─────────────────────────────── */
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* HEADER — single bar: tabs left + info right */}
-      <div className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40 flex items-stretch">
-        {/* NAV TABS */}
-        <div className="flex items-stretch overflow-x-auto">
-          {tabs.map((tab) => (
+    <div className="min-h-screen bg-gray-50 pb-16 sm:pb-0">
+
+      {/* ── MOBILE HEADER (< sm) ─────────────────────── */}
+      <div className="sm:hidden bg-white border-b-2 border-gray-200 sticky top-0 z-40 flex items-center gap-2 px-3 py-2">
+        <img src="/logohd.png" alt="Capriccio" className="h-8 w-auto flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-black text-gray-800 truncate leading-tight">POS Capriccio</p>
+          <p className="text-[10px] text-gray-500 leading-tight truncate">
+            {turno.cajero_nombre} &bull; <span className="font-mono text-red-600">{currentTime}</span>
+          </p>
+        </div>
+        <button
+          onClick={() => setShowBuscarModal(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition text-xs flex-shrink-0 active:scale-95"
+        >
+          <Search size={15} />
+          <span className="hidden xs:inline">Buscar</span>
+        </button>
+        <button
+          onClick={onLogout}
+          className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition flex-shrink-0"
+          title="Cerrar sesión"
+        >
+          <LogOut size={18} />
+        </button>
+      </div>
+
+      {/* ── DESKTOP TOPBAR (≥ sm) ───────────────────── */}
+      <div className="hidden sm:flex bg-white border-b-2 border-gray-200 sticky top-0 z-40 items-stretch h-[62px]">
+        {/* Tabs */}
+        <div className="flex items-stretch">
+          {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center justify-center gap-1 px-6 py-3 font-bold text-sm transition whitespace-nowrap border-r border-gray-200 ${
+              className={`flex flex-col items-center justify-center gap-0.5 px-5 lg:px-6 min-w-[80px] border-r border-gray-200 font-black text-xs uppercase tracking-wide transition-all ${
                 activeTab === tab.id
                   ? 'bg-red-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100'
+                  : 'bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {tab.icon}
-              <span>{tab.label}</span>
+              <span className="text-lg leading-none">{tab.emoji}</span>
+              <span>{tab.shortLabel}</span>
             </button>
           ))}
         </div>
 
-        {/* SPACER */}
         <div className="flex-1" />
 
-        {/* BRAND + INFO + BUSCAR + LOGOUT */}
-        <div className="flex items-center gap-3 px-4 border-l border-gray-200">
-          <img src="/logohd.png" alt="Capriccio" className="h-8 w-auto" />
-          <div>
-            <p className="text-base font-bold text-gray-800 leading-tight">POS Capriccio</p>
+        {/* Brand + info + actions */}
+        <div className="flex items-center gap-2 lg:gap-3 px-4 border-l border-gray-200">
+          <img src="/logohd.png" alt="Capriccio" className="h-8 w-auto hidden md:block" />
+          <div className="hidden md:block">
+            <p className="text-sm font-black text-gray-800 leading-tight">🍕 Capriccio POS</p>
             <p className="text-xs text-gray-500 leading-tight">
-              Cajero: <span className="font-semibold text-gray-700">{turno.cajero_nombre}</span>
-              {' • '}Hora: <span className="font-mono text-red-600">{currentTime}</span>
+              <span className="font-bold text-gray-700">{turno.cajero_nombre}</span>
+              {' · '}
+              <span className="font-mono text-red-600">{currentTime}</span>
             </p>
           </div>
-          {/* BOTÓN BUSCAR PEDIDO */}
           <button
             onClick={() => setShowBuscarModal(true)}
-            className="flex items-center gap-2 ml-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg transition text-sm"
+            className="flex items-center gap-1.5 px-3 lg:px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition text-sm active:scale-95"
           >
             <Search size={16} />
-            Buscar Pedido
+            <span className="hidden lg:inline">Buscar Pedido</span>
           </button>
           <button
             onClick={onLogout}
-            className="flex items-center gap-1 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition text-sm"
+            className="flex items-center gap-1 px-2 lg:px-3 py-2 text-gray-500 hover:bg-gray-100 rounded-xl transition text-sm"
           >
             <LogOut size={18} />
-            Salir
+            <span className="hidden lg:inline text-sm font-semibold">Salir</span>
           </button>
         </div>
       </div>
 
-      {/* CONTENT AREA */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Nuevo Pedido Tab */}
-        {activeTab === 'nuevo' && <NewOrderForm turno={turno} />}
+      {/* ── CONTENT ──────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-3 sm:py-6 lg:py-8">
 
-        {/* Órdenes Activas Tab */}
-        {activeTab === 'ordenes' && <ActiveOrdersList turno={turno} />}
+        {activeTab === 'nuevo'     && <NewOrderForm turno={turno} />}
+        {activeTab === 'ordenes'   && <ActiveOrdersList turno={turno} />}
+        {activeTab === 'caja'      && <CashRegisterPanel turno={turno} />}
+        {activeTab === 'productos' && <ProductManagementPanel />}
 
-        {/* Caja & Reportes Tab */}
-        {activeTab === 'caja' && <CashRegisterPanel turno={turno} />}
-
-        {/* Cerrar Turno Tab */}
         {activeTab === 'cerrar' && (
-          <button
-            onClick={() => setShowShiftModal(true)}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-lg text-lg"
-          >
-            Abrir Reporte de Cierre
-          </button>
+          <div className="flex flex-col items-center justify-center py-16 gap-5 max-w-sm mx-auto text-center">
+            <span className="text-7xl">🔒</span>
+            <div>
+              <h2 className="text-2xl font-black text-gray-900">¿Cerrar el turno?</h2>
+              <p className="text-gray-500 text-sm mt-2">
+                Asegúrate de haber cobrado todos los pedidos pendientes antes de cerrar.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowShiftModal(true)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 px-10 rounded-2xl text-base transition active:scale-95"
+            >
+              📊 Abrir Reporte de Cierre
+            </button>
+          </div>
         )}
       </div>
 
-      {/* SHIFT REPORT MODAL */}
+      {/* ── MOBILE BOTTOM TAB BAR ────────────────────── */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-gray-200 flex shadow-[0_-2px_10px_rgba(0,0,0,0.08)]">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors relative ${
+              activeTab === tab.id ? 'text-red-600' : 'text-gray-400 hover:text-gray-600'
+            }`}
+          >
+            <span className={`text-lg leading-none transition-transform ${activeTab === tab.id ? 'scale-110' : ''}`}>
+              {tab.emoji}
+            </span>
+            <span className="text-[9px] font-black uppercase tracking-wide leading-tight">{tab.shortLabel}</span>
+            {activeTab === tab.id && (
+              <span className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-red-600 rounded-b-full" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── MODALS ───────────────────────────────────── */}
       {showShiftModal && (
         <ShiftReportModal turno={turno} onClose={() => setShowShiftModal(false)} />
       )}
-
-      {/* BUSCAR PEDIDO MODAL */}
       {showBuscarModal && (
         <BuscarPedidoModal turno={turno} onClose={() => setShowBuscarModal(false)} />
       )}
