@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Minus, X, ShoppingCart, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Minus, X, ShoppingCart } from 'lucide-react';
 import { CajaItem, CajaTurno } from '@/data/caja-types';
 import ProductCustomizationModal from '../ProductCustomizationModal';
 
@@ -32,7 +32,6 @@ const OrderItemsStep: React.FC<StepProps> = ({
   onPrev,
 }) => {
   const [showModal, setShowModal] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false); // mobile cart drawer
 
   const handleAddWithCustomization = (pizza: Pizza, options: any) => {
     let itemName: string;
@@ -105,150 +104,113 @@ const OrderItemsStep: React.FC<StepProps> = ({
 
   const itemCount = formData.items.length;
 
-  /* ── Cart items list (shared between sidebar and drawer) ── */
-  const CartList = () => (
-    <div className="space-y-2 max-h-64 sm:max-h-96 overflow-y-auto">
-      {formData.items.map((item: CajaItem) => (
-        <div key={item.pizza_nombre} className="bg-white p-2.5 rounded-lg border border-gray-200">
-          <div className="flex justify-between items-start mb-1.5">
-            <div className="flex-1 min-w-0 pr-1">
-              <p className="font-semibold text-xs sm:text-sm text-gray-800 leading-tight">{item.pizza_nombre}</p>
-              <p className="text-red-600 text-xs font-bold">${item.precio_unitario.toLocaleString()}</p>
-              {item.nota && <p className="text-[10px] text-yellow-600 truncate">📝 {item.nota}</p>}
-            </div>
-            <button onClick={() => removeItem(item.pizza_nombre)} className="text-red-400 hover:text-red-600 flex-shrink-0 p-0.5">
-              <X size={15} />
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => updateQuantity(item.pizza_nombre, -1)}
-              className="w-7 h-7 flex items-center justify-center bg-gray-100 rounded hover:bg-gray-200 transition">
-              <Minus size={13} />
-            </button>
-            <span className="px-2 font-bold text-gray-800 text-sm">{item.cantidad}</span>
-            <button onClick={() => updateQuantity(item.pizza_nombre, 1)}
-              className="w-7 h-7 flex items-center justify-center bg-green-100 rounded hover:bg-green-200 transition text-green-700">
-              <Plus size={13} />
-            </button>
-            <span className="ml-auto font-bold text-gray-800 text-sm">
-              ${(item.precio_unitario * item.cantidad).toLocaleString()}
+  return (
+    <div className="flex flex-col gap-3">
+
+      {/* ── HEADER ─────────────────────────────────────────────── */}
+      <div>
+        <h2 className="text-xl sm:text-2xl font-black text-gray-900 leading-tight">Selecciona Ítems</h2>
+        <p className="text-gray-500 text-sm mt-0.5">Busca y agrega productos al pedido</p>
+      </div>
+
+      {/* ── BOTÓN AGREGAR ──────────────────────────────────────── */}
+      <button
+        onClick={() => setShowModal(true)}
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-2xl transition flex items-center justify-center gap-2.5 text-base active:scale-95 shadow-sm"
+      >
+        <ShoppingCart size={20} />
+        Agregar Producto
+      </button>
+
+      {/* ── CARRITO ────────────────────────────────────────────── */}
+      {itemCount === 0 ? (
+        <div className="py-10 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl">
+          <ShoppingCart size={32} className="mx-auto text-gray-300 mb-2" />
+          <p className="text-gray-400 text-sm font-semibold">El carrito está vacío</p>
+          <p className="text-gray-300 text-xs mt-1">Presiona el botón para agregar productos</p>
+        </div>
+      ) : (
+        <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden">
+          {/* Header del carrito */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-gray-200">
+            <span className="font-black text-sm text-gray-700">
+              🛒 Carrito
+              <span className="ml-1.5 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                {itemCount}
+              </span>
+            </span>
+            <span className="text-xs text-gray-400 font-semibold">
+              {itemCount} ítem{itemCount !== 1 ? 's' : ''}
             </span>
           </div>
-        </div>
-      ))}
-    </div>
-  );
 
-  return (
-    <div>
-      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-1">Selecciona Ítems</h2>
-      <p className="text-gray-600 mb-4 text-sm">Busca y agrega productos al pedido</p>
-
-      {/* ── DESKTOP: side-by-side layout ──────────────────────── */}
-      <div className="hidden lg:grid lg:grid-cols-3 gap-6">
-        {/* Left: add button */}
-        <div className="lg:col-span-2">
-          <button
-            onClick={() => setShowModal(true)}
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-6 rounded-xl transition flex items-center justify-center gap-3 text-lg active:scale-95"
-          >
-            <ShoppingCart size={24} />
-            Agregar Producto
-          </button>
-          {formData.items.length === 0 && (
-            <div className="mt-6 p-8 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
-              <p className="text-gray-400 text-base">👆 Presiona el botón para agregar productos</p>
-            </div>
-          )}
-        </div>
-
-        {/* Right: cart sidebar */}
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 sticky top-20 h-fit">
-          <h3 className="font-bold text-base text-gray-800 mb-3">
-            🛒 Carrito ({itemCount})
-          </h3>
-          {itemCount === 0 ? (
-            <p className="text-gray-400 text-center py-6 text-sm">Sin ítems</p>
-          ) : (
-            <>
-              <CartList />
-              <div className="border-t border-gray-300 pt-3 mt-3">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-gray-700">Total:</span>
-                  <span className="text-xl font-black text-red-600">${total.toLocaleString()}</span>
+          {/* Lista de ítems — sin límite de altura, crece con el contenido */}
+          <div className="divide-y divide-gray-100">
+            {formData.items.map((item: CajaItem, idx: number) => (
+              <div key={`${item.pizza_nombre}-${idx}`} className="flex items-center gap-2 px-3 py-2.5 bg-white hover:bg-gray-50 transition-colors">
+                {/* Nombre + precio unitario */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-xs text-gray-800 leading-tight truncate">{item.pizza_nombre}</p>
+                  <p className="text-red-600 text-[11px] font-bold mt-0.5">${item.precio_unitario.toLocaleString()} c/u</p>
+                  {item.nota && (
+                    <p className="text-[10px] text-amber-600 mt-0.5 truncate">📝 {item.nota}</p>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{itemCount} ítem{itemCount !== 1 ? 's' : ''}</p>
+
+                {/* Controles de cantidad */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => updateQuantity(item.pizza_nombre, -1)}
+                    className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg transition active:scale-90"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="w-6 text-center font-black text-sm text-gray-800">{item.cantidad}</span>
+                  <button
+                    onClick={() => updateQuantity(item.pizza_nombre, 1)}
+                    className="w-7 h-7 flex items-center justify-center bg-green-100 hover:bg-green-200 rounded-lg transition text-green-700 active:scale-90"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
+
+                {/* Subtotal */}
+                <span className="font-black text-sm text-gray-900 w-14 text-right flex-shrink-0">
+                  ${(item.precio_unitario * item.cantidad).toLocaleString()}
+                </span>
+
+                {/* Eliminar */}
+                <button
+                  onClick={() => removeItem(item.pizza_nombre)}
+                  className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition flex-shrink-0"
+                >
+                  <X size={14} />
+                </button>
               </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── MOBILE / TABLET: single column ────────────────────── */}
-      <div className="lg:hidden space-y-3">
-        {/* Add button + cart toggle in one bar */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base active:scale-95"
-          >
-            <ShoppingCart size={20} />
-            Agregar Producto
-          </button>
-          {/* Cart toggle button (shows count badge) */}
-          {itemCount > 0 && (
-            <button
-              onClick={() => setCartOpen(o => !o)}
-              className="relative px-4 py-4 bg-gray-800 hover:bg-gray-900 text-white rounded-xl transition flex items-center gap-1.5 text-sm font-bold"
-            >
-              <ShoppingCart size={18} />
-              <span>{itemCount}</span>
-              {cartOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-          )}
-        </div>
-
-        {/* Collapsible cart on mobile */}
-        {cartOpen && itemCount > 0 && (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 animate-in slide-in-from-top-2">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-bold text-sm text-gray-800">🛒 Carrito</h3>
-              <button onClick={() => setCartOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X size={16} />
-              </button>
-            </div>
-            <CartList />
-            <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between items-center">
-              <span className="font-bold text-sm text-gray-700">Total:</span>
-              <span className="text-lg font-black text-red-600">${total.toLocaleString()}</span>
-            </div>
+            ))}
           </div>
-        )}
 
-        {/* Empty state */}
-        {itemCount === 0 && (
-          <div className="p-6 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
-            <p className="text-gray-400 text-sm">👆 Presiona el botón para agregar productos</p>
+          {/* Total */}
+          <div className="flex items-center justify-between px-4 py-3 bg-white border-t-2 border-gray-200">
+            <span className="font-black text-sm text-gray-700">Total:</span>
+            <span className="text-2xl font-black text-red-600">${total.toLocaleString()}</span>
           </div>
-        )}
-      </div>
-
-      {/* ── TOTAL BAR (mobile, always visible when items exist) ── */}
-      {itemCount > 0 && (
-        <div className="lg:hidden mt-3 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
-          <span className="text-sm font-bold text-gray-700">{itemCount} ítem{itemCount !== 1 ? 's' : ''}</span>
-          <span className="text-xl font-black text-red-600">${total.toLocaleString()}</span>
         </div>
       )}
 
       {/* ── NAV BUTTONS ─────────────────────────────────────────── */}
-      <div className="mt-5 flex gap-3">
-        <button onClick={onPrev}
-          className="px-5 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition text-sm">
-          Atrás
+      <div className="flex gap-3 mt-1">
+        <button
+          onClick={onPrev}
+          className="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition active:scale-95"
+        >
+          ← Atrás
         </button>
-        <button onClick={handleNext} disabled={itemCount === 0}
-          className="flex-1 px-5 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg font-semibold transition text-sm">
+        <button
+          onClick={handleNext}
+          disabled={itemCount === 0}
+          className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-black text-sm transition active:scale-95"
+        >
           Siguiente →
         </button>
       </div>
