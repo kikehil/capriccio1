@@ -255,7 +255,7 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
       </div>
 
       {/* ── CONTENT ──────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-3 sm:py-6 lg:py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 py-3 sm:py-5 lg:py-3">
 
         {activeTab === 'nuevo'     && <NewOrderForm turno={turno} />}
         {activeTab === 'ordenes'   && <ActiveOrdersList turno={turno} />}

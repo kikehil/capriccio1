@@ -95,13 +95,13 @@ const PaymentStep: React.FC<StepProps> = ({
     return (
       <button
         onClick={() => handlePaymentMethodSelect(method)}
-        className={`flex flex-col items-center gap-2 p-5 sm:p-6 border-2 rounded-2xl transition-all active:scale-95 cursor-pointer text-center ${
+        className={`flex flex-col items-center gap-2 p-4 sm:p-5 lg:p-3 border-2 rounded-2xl transition-all active:scale-95 cursor-pointer text-center ${
           selected
             ? 'border-red-600 bg-red-50 shadow-[0_0_0_3px_rgba(220,38,38,0.12)]'
             : 'border-gray-200 bg-white hover:border-red-400 hover:bg-red-50'
         }`}
       >
-        <span className="text-4xl sm:text-5xl leading-none select-none">{icon}</span>
+        <span className="text-4xl sm:text-5xl lg:text-3xl leading-none select-none">{icon}</span>
         <div>
           <p className={`font-black text-sm sm:text-base leading-tight ${selected ? 'text-red-700' : 'text-gray-800'}`}>
             {title}
@@ -113,9 +113,9 @@ const PaymentStep: React.FC<StepProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 lg:gap-3">
       <div>
-        <h2 className="text-2xl font-black text-gray-900">Pago</h2>
+        <h2 className="text-xl lg:text-lg font-black text-gray-900">Pago</h2>
         <p className="text-sm text-gray-500 mt-1">
           Total: <strong className="text-red-600 text-lg font-black">${formData.total?.toLocaleString()}</strong>
         </p>
@@ -149,7 +149,7 @@ const PaymentStep: React.FC<StepProps> = ({
                 type="number"
                 value={montoRecibido}
                 onChange={e => handleMontoChange(e.target.value)}
-                className="w-full px-4 py-3.5 text-2xl font-bold border-2 border-gray-300 rounded-xl focus:border-red-600 outline-none bg-white text-gray-900 transition"
+                className="w-full px-4 py-3 lg:py-2 text-2xl lg:text-xl font-bold border-2 border-gray-300 rounded-xl focus:border-red-600 outline-none bg-white text-gray-900 transition"
                 placeholder={`Ej: ${formData.total + 50}`}
                 min={formData.total}
                 inputMode="numeric"
@@ -206,7 +206,7 @@ const PaymentStep: React.FC<StepProps> = ({
                 type="number"
                 value={montoRecibido}
                 onChange={e => handleMontoChange(e.target.value)}
-                className="w-full px-4 py-3.5 text-2xl font-bold border-2 border-gray-300 rounded-xl focus:border-red-600 outline-none bg-white text-gray-900 transition"
+                className="w-full px-4 py-3 lg:py-2 text-2xl lg:text-xl font-bold border-2 border-gray-300 rounded-xl focus:border-red-600 outline-none bg-white text-gray-900 transition"
                 placeholder="$0"
                 min="0"
                 inputMode="numeric"
@@ -269,17 +269,17 @@ const PaymentStep: React.FC<StepProps> = ({
       )}
 
       {/* ── NAV BUTTONS ─────────────────────────────────── */}
-      <div className="flex gap-3 mt-1">
+      <div className="flex gap-3">
         <button
           onClick={onPrev}
-          className="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95"
+          className="px-6 py-3 lg:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95"
         >
           ← Atrás
         </button>
         <button
           onClick={handleNext}
           disabled={!formData.payment_method}
-          className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-black text-sm transition active:scale-95"
+          className="flex-1 py-3 lg:py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-black text-sm transition active:scale-95"
         >
           Siguiente →
         </button>

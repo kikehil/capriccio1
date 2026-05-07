@@ -150,22 +150,22 @@ const CustomerInfoStep: React.FC<StepProps> = ({
   const showFormFields = lookupState === 'new' || isEditing || lookupState === 'idle';
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 lg:gap-3">
       <div>
-        <h2 className="text-2xl font-black text-gray-900">Datos del Cliente</h2>
-        <p className="text-sm text-gray-500 mt-1">El teléfono busca clientes anteriores automáticamente</p>
+        <h2 className="text-xl lg:text-lg font-black text-gray-900">Datos del Cliente</h2>
+        <p className="text-sm text-gray-500 mt-0.5">El teléfono busca clientes anteriores automáticamente</p>
       </div>
 
       {/* ── PHONE LOOKUP CARD ──────────────────────────── */}
-      <div className="bg-white border-2 border-gray-200 rounded-2xl p-5 shadow-sm">
-        <label className="block text-xs font-black uppercase tracking-widest text-gray-500 mb-2.5">
+      <div className="bg-white border-2 border-gray-200 rounded-2xl p-4 lg:p-3 shadow-sm">
+        <label className="block text-xs font-black uppercase tracking-widest text-gray-500 mb-2">
           📞 Número de teléfono *
         </label>
         <input
           type="tel"
           value={formData.telefono || ''}
           onChange={e => handlePhoneChange(e.target.value)}
-          className={`w-full px-4 py-4 text-2xl sm:text-3xl font-bold tracking-widest border-2 rounded-xl outline-none transition bg-white text-gray-900 ${
+          className={`w-full px-4 py-3 lg:py-2.5 text-2xl lg:text-xl font-bold tracking-widest border-2 rounded-xl outline-none transition bg-white text-gray-900 ${
             errors.telefono ? 'border-red-500' : 'border-gray-300 focus:border-red-600 focus:shadow-[0_0_0_3px_rgba(220,38,38,0.12)]'
           }`}
           placeholder="833 000 0000"
@@ -250,7 +250,7 @@ const CustomerInfoStep: React.FC<StepProps> = ({
 
       {/* ── FORM FIELDS (new or editing) ───────────────── */}
       {showFormFields && (
-        <div className="bg-white border-2 border-gray-200 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="bg-white border-2 border-gray-200 rounded-2xl p-4 lg:p-3 shadow-sm space-y-3">
           {isEditing && (
             <div className="flex items-center gap-2 text-sm font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
               ✏️ Editando datos del cliente encontrado
@@ -266,7 +266,7 @@ const CustomerInfoStep: React.FC<StepProps> = ({
               type="text"
               value={formData.cliente_nombre || ''}
               onChange={e => handleChange('cliente_nombre', e.target.value)}
-              className={`w-full px-4 py-3.5 border-2 rounded-xl outline-none text-gray-900 bg-white text-base font-semibold transition ${
+              className={`w-full px-4 py-3 lg:py-2.5 border-2 rounded-xl outline-none text-gray-900 bg-white text-base font-semibold transition ${
                 errors.cliente_nombre ? 'border-red-500' : 'border-gray-300 focus:border-red-600'
               }`}
               placeholder="Ej: Carlos Gómez"
@@ -371,16 +371,16 @@ const CustomerInfoStep: React.FC<StepProps> = ({
       {/* ── NAV BUTTONS ────────────────────────────────── */}
       {/* Show back+next when in form mode (new/editing/idle) */}
       {(lookupState !== 'found' || isEditing) && (
-        <div className="flex gap-3 mt-1">
+        <div className="flex gap-3">
           <button
             onClick={() => { if (isEditing) { setIsEditing(false); } else { onPrev(); } }}
-            className="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95"
+            className="px-6 py-3 lg:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95"
           >
             ← Atrás
           </button>
           <button
             onClick={handleNext}
-            className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-sm transition active:scale-95"
+            className="flex-1 py-3 lg:py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-sm transition active:scale-95"
           >
             Siguiente →
           </button>
@@ -390,7 +390,7 @@ const CustomerInfoStep: React.FC<StepProps> = ({
       {lookupState === 'found' && !isEditing && (
         <button
           onClick={onPrev}
-          className="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95 self-start"
+          className="px-6 py-3 lg:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition-all active:scale-95 self-start"
         >
           ← Atrás
         </button>

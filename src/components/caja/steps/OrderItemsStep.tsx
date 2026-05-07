@@ -109,14 +109,14 @@ const OrderItemsStep: React.FC<StepProps> = ({
 
       {/* ── HEADER ─────────────────────────────────────────────── */}
       <div>
-        <h2 className="text-xl sm:text-2xl font-black text-gray-900 leading-tight">Selecciona Ítems</h2>
+        <h2 className="text-xl lg:text-lg font-black text-gray-900 leading-tight">Selecciona Ítems</h2>
         <p className="text-gray-500 text-sm mt-0.5">Busca y agrega productos al pedido</p>
       </div>
 
       {/* ── BOTÓN AGREGAR ──────────────────────────────────────── */}
       <button
         onClick={() => setShowModal(true)}
-        className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-2xl transition flex items-center justify-center gap-2.5 text-base active:scale-95 shadow-sm"
+        className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3 lg:py-2.5 rounded-2xl transition flex items-center justify-center gap-2.5 text-base active:scale-95 shadow-sm"
       >
         <ShoppingCart size={20} />
         Agregar Producto
@@ -199,17 +199,17 @@ const OrderItemsStep: React.FC<StepProps> = ({
       )}
 
       {/* ── NAV BUTTONS ─────────────────────────────────────────── */}
-      <div className="flex gap-3 mt-1">
+      <div className="flex gap-3">
         <button
           onClick={onPrev}
-          className="px-6 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition active:scale-95"
+          className="px-6 py-3 lg:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black text-sm transition active:scale-95"
         >
           ← Atrás
         </button>
         <button
           onClick={handleNext}
           disabled={itemCount === 0}
-          className="flex-1 py-3.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-black text-sm transition active:scale-95"
+          className="flex-1 py-3 lg:py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-xl font-black text-sm transition active:scale-95"
         >
           Siguiente →
         </button>
