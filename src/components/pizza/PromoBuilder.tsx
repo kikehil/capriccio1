@@ -16,10 +16,17 @@ const PROMO_SIZES = [
     { id: '2_grandes', label: '2 Grandes', price: 275 }
 ];
 
+const PROMO_CRUST_OPTIONS = [
+    { id: 'normal',  label: 'Sin Orilla Rellena',         prices: { mediana: 0,  grande: 0  } },
+    { id: 'rellena', label: '🧀 Orilla Rellena de Queso', prices: { mediana: 25, grande: 35 } },
+    { id: 'dedos',   label: '🥖 Orilla Dedos de Queso',   prices: { mediana: 35, grande: 45 } },
+];
+
 export default function PromoBuilder({ onAddPromo, menu = menuOriginal }: PromoBuilderProps) {
     const [selectedSize, setSelectedSize] = useState(PROMO_SIZES[0]);
     const [pizza1, setPizza1] = useState<Pizza | null>(null);
     const [pizza2, setPizza2] = useState<Pizza | null>(null);
+    const [selectedCrust, setSelectedCrust] = useState(PROMO_CRUST_OPTIONS[0]);
 
     // Días válidos: Lunes (1), Miércoles (3), Viernes (5)
     const today = new Date().getDay();
@@ -33,18 +40,24 @@ export default function PromoBuilder({ onAddPromo, menu = menuOriginal }: PromoB
     const handleAdd = () => {
         if (!isComplete) return;
 
+        const promoSizeKey = selectedSize.id.includes('grande') ? 'grande' : 'mediana';
+        const crustPrice = selectedCrust.prices[promoSizeKey as keyof typeof selectedCrust.prices] ?? 0;
+        const totalPrice = selectedSize.price + crustPrice;
+        const crustText = selectedCrust.id !== 'normal' ? ` + ${selectedCrust.label}` : '';
+
         const promoItem = {
             id: `promo_${Date.now()}`,
             nombre: `Promo: ${selectedSize.label}`,
-            descripcion: `Pizza 1: ${pizza1.nombre} | Pizza 2: ${pizza2.nombre}`,
-            precio: selectedSize.price,
-            imagen: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=800', // Generic double pizza image
+            descripcion: `Pizza 1: ${pizza1!.nombre} | Pizza 2: ${pizza2!.nombre}`,
+            precio: totalPrice,
+            imagen: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=800',
             categoria: '🔥 Promos',
             activo: true,
             size: selectedSize.label,
-            totalItemPrice: selectedSize.price,
+            crust: selectedCrust.id !== 'normal' ? selectedCrust.label : undefined,
+            totalItemPrice: totalPrice,
             quantity: 1,
-            cartId: `promo_${selectedSize.id}_${pizza1.id}_${pizza2.id}`,
+            cartId: `promo_${selectedSize.id}_${pizza1!.id}_${pizza2!.id}_${selectedCrust.id}`,
             extras: []
         };
 
@@ -163,7 +176,35 @@ export default function PromoBuilder({ onAddPromo, menu = menuOriginal }: PromoB
                     </div>
                 </div>
 
-                {/* Paso 4: Botón Gigante */}
+                {/* Paso 4: Orilla */}
+                <div>
+                    <div className="flex items-center gap-3 mb-4">
+                        <span className="bg-capriccio-gold text-capriccio-dark w-8 h-8 rounded-full flex items-center justify-center font-black text-lg">4</span>
+                        <h3 className="text-xl font-black text-white uppercase italic">Orilla Rellena (opcional)</h3>
+                    </div>
+                    <div className="space-y-3">
+                        {PROMO_CRUST_OPTIONS.map(crust => {
+                            const sizeKey = selectedSize.id.includes('grande') ? 'grande' : 'mediana';
+                            const crustP = crust.prices[sizeKey as keyof typeof crust.prices] ?? 0;
+                            return (
+                                <div key={crust.id} onClick={() => setSelectedCrust(crust)}
+                                    className={cn("flex items-center justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all",
+                                        selectedCrust.id === crust.id
+                                            ? "border-capriccio-gold bg-capriccio-gold/10"
+                                            : "border-white/10 bg-black/40 hover:bg-black hover:border-white/20")}>
+                                    <span className={cn("font-bold uppercase italic text-sm", selectedCrust.id === crust.id ? "text-capriccio-gold" : "text-white")}>
+                                        {crust.label}
+                                    </span>
+                                    <span className={cn("font-black", selectedCrust.id === crust.id ? "text-white" : "text-gray-400")}>
+                                        {crustP > 0 ? `+$${crustP}` : 'Sin cargo'}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Paso 5: Botón Gigante */}
                 <div className="pt-4 border-t border-white/10">
                     {!isValidDay ? (
                         <div className="bg-red-900/20 border border-red-500/50 p-6 rounded-2xl text-center">
@@ -196,11 +237,16 @@ export default function PromoBuilder({ onAddPromo, menu = menuOriginal }: PromoB
                         </button>
                     )}
                     
-                    {isValidDay && (
-                        <p className="text-center text-gray-500 font-bold mt-4 italic text-sm">
-                            Total a sumar al carrito: <span className="text-white">${selectedSize.price}</span>
-                        </p>
-                    )}
+                    {isValidDay && (() => {
+                        const sizeKey = selectedSize.id.includes('grande') ? 'grande' : 'mediana';
+                        const crustP = selectedCrust.prices[sizeKey as keyof typeof selectedCrust.prices] ?? 0;
+                        return (
+                            <p className="text-center text-gray-500 font-bold mt-4 italic text-sm">
+                                Total a sumar al carrito: <span className="text-white">${selectedSize.price + crustP}</span>
+                                {crustP > 0 && <span className="text-capriccio-gold ml-1">(+${crustP} orilla)</span>}
+                            </p>
+                        );
+                    })()}
                 </div>
             </div>
         </div>

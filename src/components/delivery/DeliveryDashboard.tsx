@@ -66,10 +66,29 @@ const DeliveryDashboard = () => {
     const [isMapOpen, setIsMapOpen] = useState(false);
     const [currentPos, setCurrentPos] = useState<{ lat: number, lng: number } | undefined>(undefined);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const [reloginUser, setReloginUser] = useState('');
+    const [reloginPass, setReloginPass] = useState('');
+    const [reloginError, setReloginError] = useState('');
+    const [reloginLoading, setReloginLoading] = useState(false);
 
     // Auth State
-    const [repartidorName, setRepartidorName] = useState<string | null>(null);
+    const [repartidorName, setRepartidorName] = useState<string | null>(() => {
+        if (typeof window === 'undefined') return null;
+        const token = localStorage.getItem('capriccio_token_repartidor');
+        if (!token) return null; // Sin token → siempre pedir login
+        const saved = (localStorage.getItem('capriccio_repartidor_nombre') || '').trim();
+        const uname  = (localStorage.getItem('capriccio_username') || '').trim();
+        return saved || uname || null;
+    });
     const [nameInput, setNameInput] = useState('');
+    const [passInput, setPassInput] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [loginLoading, setLoginLoading] = useState(false);
+    // Si ya hay token guardado se salta el paso de contraseña
+    const [hasToken] = useState(() =>
+        typeof window !== 'undefined' && !!localStorage.getItem('capriccio_token_repartidor')
+    );
     const [tick, setTick] = useState(0);
 
 
@@ -99,7 +118,7 @@ const DeliveryDashboard = () => {
 
             if (Array.isArray(data)) {
                 // Solo pedidos a domicilio — excluir recoger en sucursal
-                const relevantes = data
+                const fromDB = data
                     .filter(p =>
                         (p.status === 'listo' || p.status === 'en_reparto' || p.status === 'despachado') &&
                         (p.metodo_entrega === 'domicilio' || p.metodo_entrega === 'delivery' || !p.metodo_entrega)
@@ -112,7 +131,21 @@ const DeliveryDashboard = () => {
                     }))
                     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
-                setPedidosListos(relevantes);
+                // MERGE: combinar DB + socket para no perder pedidos en race conditions
+                setPedidosListos(prev => {
+                    const dbMap = new Map(fromDB.map(p => [p.id, p]));
+                    const existingIds = new Set(prev.map(p => p.id));
+                    const survived = prev
+                        .filter(p => {
+                            if (dbMap.has(p.id)) return true;
+                            const ageMs = Date.now() - new Date((p as any).createdAt || 0).getTime();
+                            return ageMs < 20000;
+                        })
+                        .map(p => dbMap.has(p.id) ? dbMap.get(p.id)! : p);
+                    const newFromDB = fromDB.filter(p => !existingIds.has(p.id));
+                    return [...survived, ...newFromDB]
+                        .sort((a, b) => new Date((b as any).createdAt || 0).getTime() - new Date((a as any).createdAt || 0).getTime());
+                });
             }
             setIsLoaded(true);
         } catch (e) {
@@ -121,12 +154,19 @@ const DeliveryDashboard = () => {
         }
     };
 
+    // Cuando repartidorName se establece (tras identificación), forzar fetch inmediato
     useEffect(() => {
-        const savedName = localStorage.getItem('capriccio_repartidor_nombre');
-        if (savedName) setRepartidorName(savedName);
+        if (repartidorName) {
+            refreshToken().then(() => fetchInitialOrders());
+        }
+    }, [repartidorName]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    useEffect(() => {
         // Renovar token al montar y luego cargar pedidos
         refreshToken().then(() => fetchInitialOrders());
+
+        // Polling cada 10s — garantiza sincronía aunque el socket falle
+        const pollInterval = setInterval(fetchInitialOrders, 10000);
 
         // Renovar token cada 30 minutos
         const tokenInterval = setInterval(() => refreshToken(), 30 * 60 * 1000);
@@ -137,9 +177,13 @@ const DeliveryDashboard = () => {
                 (err) => console.warn(err),
                 { enableHighAccuracy: true }
             );
-            return () => { navigator.geolocation.clearWatch(watchId); clearInterval(tokenInterval); };
+            return () => {
+                navigator.geolocation.clearWatch(watchId);
+                clearInterval(pollInterval);
+                clearInterval(tokenInterval);
+            };
         }
-        return () => clearInterval(tokenInterval);
+        return () => { clearInterval(pollInterval); clearInterval(tokenInterval); };
     }, []);
 
     useEffect(() => {
@@ -155,9 +199,9 @@ const DeliveryDashboard = () => {
         const handleConnect = () => {
             setSocketConnected(true);
             if (repartidorName) socket.emit('registro_repartidor', repartidorName);
-            // Re-fetch on reconnect (missed events while disconnected)
+            // Re-fetch con delay para evitar carrera de estado en reconexión
             console.log("🔄 [Repartidor] Socket reconectado — refrescando pedidos");
-            fetchInitialOrders();
+            setTimeout(() => fetchInitialOrders(), 500);
         };
         const handleDisconnect = () => setSocketConnected(false);
 
@@ -233,18 +277,87 @@ const DeliveryDashboard = () => {
         return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, [repartidorName]);
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleRelogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!nameInput.trim()) return;
-        localStorage.setItem('capriccio_repartidor_nombre', nameInput);
-        setRepartidorName(nameInput);
-        const socket = getSocket();
-        if (socket) socket.emit('registro_repartidor', nameInput);
+        setReloginLoading(true);
+        setReloginError('');
+        try {
+            const res = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: reloginUser, password: reloginPass, role_request: 'repartidor' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('capriccio_token_repartidor', data.token);
+                setSessionExpired(false);
+                setReloginPass('');
+                setReloginError('');
+            } else {
+                setReloginError('Credenciales inválidas');
+            }
+        } catch {
+            setReloginError('Error de conexión');
+        } finally {
+            setReloginLoading(false);
+        }
+    };
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const nombre = nameInput.trim();
+        if (!nombre) return;
+
+        const token = localStorage.getItem('capriccio_token_repartidor');
+
+        // Si ya hay token válido → solo actualizar nombre (turno nuevo, mismo dispositivo)
+        if (token) {
+            localStorage.setItem('capriccio_repartidor_nombre', nombre);
+            setRepartidorName(nombre);
+            const socket = getSocket();
+            if (socket) socket.emit('registro_repartidor', nombre);
+            fetchInitialOrders();
+            return;
+        }
+
+        // Sin token → autenticar con usuario + contraseña
+        if (!passInput.trim()) { setLoginError('Ingresa tu contraseña'); return; }
+        setLoginLoading(true);
+        setLoginError('');
+        try {
+            const res = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: nombre, password: passInput, role_request: 'repartidor' })
+            });
+            if (!res.ok) {
+                // Fallback: intentar con nombre como username (si coincide en DB)
+                setLoginError('Usuario o contraseña incorrectos');
+                return;
+            }
+            const data = await res.json();
+            localStorage.setItem('capriccio_token_repartidor', data.token);
+            const displayName = (data.nombre || '').trim() || nombre;
+            localStorage.setItem('capriccio_repartidor_nombre', displayName);
+            localStorage.setItem('capriccio_username', data.username || nombre);
+            setRepartidorName(displayName);
+            const socket = getSocket();
+            if (socket) socket.emit('registro_repartidor', displayName);
+            fetchInitialOrders();
+        } catch {
+            setLoginError('Error de conexión');
+        } finally {
+            setLoginLoading(false);
+        }
     };
 
     const handleLogout = () => {
         localStorage.removeItem('capriccio_repartidor_nombre');
+        // El token se mantiene — al volver solo pedirá el nombre (cambio de turno/persona)
         setRepartidorName(null);
+        setNameInput('');
+        setPassInput('');
+        setLoginError('');
     };
 
     const patchWithAuth = async (url: string, body: object): Promise<boolean> => {
@@ -259,8 +372,12 @@ const DeliveryDashboard = () => {
         let resp = await doFetch();
         if (resp.status === 401 || resp.status === 403) {
             console.warn('🔑 [Repartidor] PATCH 401 — renovando token...');
-            await refreshToken();
+            const renewed = await refreshToken();
             resp = await doFetch();
+            if (!resp.ok && !renewed) {
+                setSessionExpired(true);
+                return false;
+            }
         }
         return resp.ok;
     };
@@ -338,6 +455,32 @@ const DeliveryDashboard = () => {
         (p.status === 'en_reparto' || p.status === 'despachado') && p.repartidor && p.repartidor !== repartidorName
     );
 
+    if (sessionExpired) {
+        return (
+            <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                    className="bg-white rounded-[3rem] p-10 w-full max-w-md shadow-2xl text-center">
+                    <div className="text-5xl mb-3">🔐</div>
+                    <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-1">Sesión Expirada</h2>
+                    <p className="text-slate-400 font-bold text-sm mb-6 italic">Ingresa tus credenciales para continuar.</p>
+                    <form onSubmit={handleRelogin} className="space-y-3">
+                        <input type="text" placeholder="USUARIO" required
+                            className="w-full bg-slate-50 text-black p-4 rounded-2xl font-black italic outline-none border-2 border-transparent focus:border-capriccio-gold transition-all text-center placeholder:text-slate-300"
+                            value={reloginUser} onChange={e => setReloginUser(e.target.value)} autoFocus />
+                        <input type="password" placeholder="CONTRASEÑA" required
+                            className="w-full bg-slate-50 text-black p-4 rounded-2xl font-black italic outline-none border-2 border-transparent focus:border-capriccio-gold transition-all text-center placeholder:text-slate-300"
+                            value={reloginPass} onChange={e => setReloginPass(e.target.value)} />
+                        {reloginError && <p className="text-red-500 font-bold text-xs uppercase bg-red-50 py-2 rounded-lg">{reloginError}</p>}
+                        <button type="submit" disabled={reloginLoading}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-black transition-all disabled:opacity-50">
+                            {reloginLoading ? '...' : 'ENTRAR'}
+                        </button>
+                    </form>
+                </motion.div>
+            </div>
+        );
+    }
+
     if (!repartidorName) {
         return (
             <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -349,20 +492,48 @@ const DeliveryDashboard = () => {
                     <div className="w-20 h-20 bg-capriccio-gold rounded-3xl flex items-center justify-center mx-auto mb-6 text-slate-900 shadow-xl shadow-capriccio-gold/20">
                         <Bike size={40} strokeWidth={2.5} />
                     </div>
-                    <h2 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900 mb-2">Identificación</h2>
-                    <p className="text-slate-400 font-bold italic text-sm mb-8">Ingresa tu nombre para empezar a recibir pedidos asignados.</p>
+                    <h2 className="text-3xl font-black uppercase italic tracking-tighter text-slate-900 mb-2">
+                        {hasToken ? 'Identificación' : 'Acceso Repartidor'}
+                    </h2>
+                    <p className="text-slate-400 font-bold italic text-sm mb-8">
+                        {hasToken
+                            ? 'Ingresa tu nombre para empezar el turno.'
+                            : 'Ingresa tu usuario y contraseña para acceder.'}
+                    </p>
 
                     <form onSubmit={handleLogin} className="space-y-4">
                         <input
                             type="text"
-                            placeholder="TU NOMBRE (Ej: Juan)"
-                            className="w-full bg-slate-50 p-6 rounded-2xl font-black italic uppercase outline-none border-2 border-transparent focus:border-capriccio-gold focus:bg-white transition-all text-center"
+                            placeholder={hasToken ? 'TU NOMBRE (Ej: Juan)' : 'USUARIO'}
+                            required
+                            className="w-full bg-slate-50 text-black p-6 rounded-2xl font-black italic uppercase outline-none border-2 border-transparent focus:border-capriccio-gold focus:bg-white transition-all text-center placeholder:text-slate-300"
                             value={nameInput}
                             onChange={(e) => setNameInput(e.target.value)}
                             autoFocus
                         />
-                        <button className="w-full bg-slate-950 text-white py-6 rounded-2xl font-black italic uppercase tracking-widest shadow-xl hover:bg-black transition-all active:scale-95">
-                            ENTRAR A TURNO
+                        {!hasToken && (
+                            <input
+                                type="password"
+                                placeholder="CONTRASEÑA"
+                                required
+                                className="w-full bg-slate-50 text-black p-6 rounded-2xl font-black italic outline-none border-2 border-transparent focus:border-capriccio-gold focus:bg-white transition-all text-center placeholder:text-slate-300"
+                                value={passInput}
+                                onChange={(e) => setPassInput(e.target.value)}
+                            />
+                        )}
+
+                        {loginError && (
+                            <p className="text-red-500 font-bold text-xs uppercase bg-red-50 py-2 rounded-lg">
+                                {loginError}
+                            </p>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={loginLoading}
+                            className="w-full bg-slate-950 text-white py-6 rounded-2xl font-black italic uppercase tracking-widest shadow-xl hover:bg-black transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            {loginLoading ? '...' : hasToken ? 'ENTRAR A TURNO' : 'ENTRAR'}
                         </button>
                     </form>
                 </motion.div>

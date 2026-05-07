@@ -48,6 +48,11 @@ const KitchenDisplay = () => {
     const [currentTime, setCurrentTime] = useState<string>('');
     const [isLoaded, setIsLoaded] = useState(false);
     const [lastSync, setLastSync] = useState<Date>(new Date());
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const [reloginUser, setReloginUser] = useState('');
+    const [reloginPass, setReloginPass] = useState('');
+    const [reloginError, setReloginError] = useState('');
+    const [reloginLoading, setReloginLoading] = useState(false);
     const [printEnabled, setPrintEnabled] = useState<boolean>(() => {
         if (typeof window === 'undefined') return true;
         const saved = localStorage.getItem('capriccio_cocina_print');
@@ -55,7 +60,6 @@ const KitchenDisplay = () => {
     });
 
     const fetchOrders = async () => {
-        setIsLoaded(false);
         try {
             let token = localStorage.getItem('capriccio_token_cocina');
             let response = await fetch(`${API_URL}/api/pedidos`, {
@@ -77,18 +81,42 @@ const KitchenDisplay = () => {
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
             const data = await response.json();
-            const activeOrders = data
-                .filter((o: any) => o.status === 'recibido' || o.status === 'preparando' || o.status === 'pending' || o.status === 'pendiente' || o.status === 'en_preparacion')
+            const ACTIVE_STATUSES = ['recibido', 'preparando', 'pending', 'pendiente', 'en_preparacion'];
+            const fromDB = data
+                .filter((o: any) => ACTIVE_STATUSES.includes(o.status))
                 .map((o: any) => ({
                     ...o,
                     id: o.order_id || o.id,
                     order_id: o.order_id || o.id,
                     createdAt: o.created_at || o.createdAt || new Date().toISOString(),
                     status: (o.status === 'recibido' || o.status === 'pending' || o.status === 'pendiente') ? 'pending' : 'preparing'
-                }))
-                .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                }));
 
-            setOrders(activeOrders);
+            // MERGE: combinar DB + estado local para evitar race conditions
+            setOrders(prev => {
+                const dbMap = new Map(fromDB.map((o: any) => [o.id, o]));
+                const existingIds = new Set(prev.map(o => o.id));
+
+                // 1. Filtrar órdenes existentes:
+                //    - Si está en DB activa → mantener con datos frescos
+                //    - Si NO está en DB → mantener solo si llegó hace menos de 20s
+                //      (race: socket más rápido que HTTP, DB aún no la tenía al hacer el query)
+                //    - Si NO está en DB y tiene >20s → ya la procesaron, eliminar
+                const survived = prev
+                    .filter(o => {
+                        if (dbMap.has(o.id)) return true;
+                        const ageMs = Date.now() - new Date(o.createdAt).getTime();
+                        return ageMs < 20000; // grace period de 20s
+                    })
+                    .map(o => dbMap.has(o.id) ? dbMap.get(o.id) : o);
+
+                // 2. Añadir órdenes nuevas de DB que no estén en estado
+                const newFromDB = fromDB.filter((o: any) => !existingIds.has(o.id));
+
+                return [...survived, ...newFromDB]
+                    .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            });
+
             setLastSync(new Date());
         } catch (error) {
             console.error("❌ [Cocina] Error al obtener pedidos:", error);
@@ -97,10 +125,13 @@ const KitchenDisplay = () => {
         }
     };
 
-    // 1. Carga inicial: renovar token PRIMERO, luego cargar pedidos
+    // 1. Carga inicial + polling cada 10s para mantener sincronía
     useEffect(() => {
         // Renovar token inmediatamente al montar (garantiza sesión fresca)
         refreshToken().then(() => fetchOrders());
+
+        // Polling cada 10 segundos — garantiza que nada se quede atascado
+        const pollInterval = setInterval(fetchOrders, 10000);
 
         const updateTime = () => {
             setCurrentTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }));
@@ -108,13 +139,14 @@ const KitchenDisplay = () => {
         updateTime();
         const timer = setInterval(updateTime, 10000);
 
-        // Renovar token cada 30 minutos (mucho más frecuente que antes)
+        // Renovar token cada 30 minutos
         const tokenRefreshInterval = setInterval(async () => {
             console.log('🔑 [Cocina] Renovación periódica de token...');
             await refreshToken();
         }, 30 * 60 * 1000);
 
         return () => {
+            clearInterval(pollInterval);
             clearInterval(timer);
             clearInterval(tokenRefreshInterval);
         };
@@ -126,13 +158,14 @@ const KitchenDisplay = () => {
         if (!socket) return;
 
         const handleNuevoPedido = (pedido: any) => {
-            console.log("🍕 [Cocina] SOCKET: Nuevo pedido!", pedido.id);
+            console.log("🍕 [Cocina] SOCKET: Nuevo pedido!", pedido.order_id || pedido.id);
 
             try {
                 const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
                 audio.play();
             } catch (e) { }
 
+            // Agregar inmediatamente al estado para respuesta visual instantánea
             setOrders(prev => {
                 const resolvedId = pedido.order_id || pedido.id;
                 if (prev.some(o => o.id === resolvedId)) return prev;
@@ -147,6 +180,9 @@ const KitchenDisplay = () => {
                     new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
                 );
             });
+
+            // Re-fetch desde DB 1.5s después para confirmar y sincronizar items completos
+            setTimeout(() => fetchOrders(), 1500);
         };
 
         socket.on('nuevo_pedido', handleNuevoPedido);
@@ -155,10 +191,10 @@ const KitchenDisplay = () => {
             setRepartidoresOnline(reps);
         });
 
-        // Re-fetch on reconnect (missed events while disconnected)
+        // Al reconectar: re-fetch con delay para evitar carrera de estado
         const handleReconnect = () => {
             console.log("🔄 [Cocina] Socket reconectado — refrescando pedidos");
-            fetchOrders();
+            setTimeout(() => fetchOrders(), 500);
         };
         socket.on('connect', handleReconnect);
 
@@ -198,13 +234,44 @@ const KitchenDisplay = () => {
             let resp = await doFetch();
             if (resp.status === 401 || resp.status === 403) {
                 console.warn('🔑 [Cocina] PATCH 401 — renovando token y reintentando...');
-                await refreshToken();
-                resp = await doFetch(); // siempre reintentar tras refresh
+                const renewed = await refreshToken();
+                resp = await doFetch();
+                if (!resp.ok && !renewed) {
+                    // Refresh también falló → mostrar modal de re-login
+                    setSessionExpired(true);
+                    return false;
+                }
             }
             return resp.ok;
         } catch (error) {
             console.error('Error PATCH:', error);
             return false;
+        }
+    };
+
+    const handleRelogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setReloginLoading(true);
+        setReloginError('');
+        try {
+            const res = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: reloginUser, password: reloginPass, role_request: 'cocina' })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('capriccio_token_cocina', data.token);
+                setSessionExpired(false);
+                setReloginPass('');
+                setReloginError('');
+            } else {
+                setReloginError('Credenciales inválidas');
+            }
+        } catch {
+            setReloginError('Error de conexión');
+        } finally {
+            setReloginLoading(false);
         }
     };
 
@@ -335,6 +402,45 @@ ${(order as any).notas ? `<div class="line"></div><div><b>NOTAS:</b> ${(order as
 
     return (
         <div className="min-h-screen bg-slate-950 p-4 md:p-8">
+
+        {/* Modal re-login inline — no navega fuera, los pedidos siguen en pantalla */}
+        {sessionExpired && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+                <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl text-center">
+                    <div className="text-5xl mb-3">🔐</div>
+                    <h2 className="text-2xl font-black uppercase italic text-slate-900 mb-1">Sesión Expirada</h2>
+                    <p className="text-slate-400 font-bold text-sm mb-6 italic">Ingresa tus credenciales para continuar sin perder los pedidos.</p>
+                    <form onSubmit={handleRelogin} className="space-y-3">
+                        <input
+                            type="text"
+                            placeholder="USUARIO"
+                            required
+                            className="w-full bg-slate-50 text-slate-900 p-4 rounded-2xl font-black italic outline-none border-2 border-transparent focus:border-capriccio-gold transition-all text-center placeholder:text-slate-300"
+                            value={reloginUser}
+                            onChange={e => setReloginUser(e.target.value)}
+                            autoFocus
+                        />
+                        <input
+                            type="password"
+                            placeholder="CONTRASEÑA"
+                            required
+                            className="w-full bg-slate-50 text-slate-900 p-4 rounded-2xl font-black italic outline-none border-2 border-transparent focus:border-capriccio-gold transition-all text-center placeholder:text-slate-300"
+                            value={reloginPass}
+                            onChange={e => setReloginPass(e.target.value)}
+                        />
+                        {reloginError && <p className="text-red-500 font-bold text-xs uppercase bg-red-50 py-2 rounded-lg">{reloginError}</p>}
+                        <button
+                            type="submit"
+                            disabled={reloginLoading}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-sm hover:bg-black transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {reloginLoading ? <span className="animate-spin">⏳</span> : 'ENTRAR'}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        )}
+
 <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12 border-b border-slate-800 pb-8">
                 <div className="flex items-center gap-6">
                     <img src="/logohd.png" alt="Logo" className="h-20 w-auto drop-shadow-lg" />

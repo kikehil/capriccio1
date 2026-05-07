@@ -59,7 +59,8 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 
     const metodoPagoLabel =
       formData.payment_method === 'efectivo' ? '💵 EFECTIVO' :
-      formData.payment_method === 'tarjeta' ? '💳 TARJETA' : '⏳ PAGO EN ENTREGA';
+      formData.payment_method === 'tarjeta' ? '💳 TARJETA' :
+      formData.payment_method === 'transferencia' ? '🏦 TRANSFERENCIA' : '⏳ PAGO EN ENTREGA';
 
     const cambio = formData.payment_method === 'efectivo' && formData.monto_recibido
       ? formData.monto_recibido - computedTotal

@@ -144,19 +144,19 @@ const CashRegisterPanel: React.FC<CashRegisterPanelProps> = ({ turno }) => {
     <div className="space-y-6">
 
       {/* ── TARJETAS RESUMEN ─────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
         {[
-          { label: 'Pedidos',       value: stats.total_ordenes,          icon: <TrendingUp size={24} className="text-blue-600" />,   color: 'bg-blue-50 border-blue-200' },
-          { label: 'Efectivo',      value: fmt(stats.total_efectivo),    icon: <DollarSign size={24} className="text-green-600" />,  color: 'bg-green-50 border-green-200' },
-          { label: 'Tarjeta/Trans', value: fmt(stats.total_tarjeta + stats.total_transferencia), icon: <DollarSign size={24} className="text-purple-600" />, color: 'bg-purple-50 border-purple-200' },
-          { label: 'Sin Cobrar',    value: fmt(stats.monto_sin_cobrar),  icon: <AlertTriangle size={24} className="text-red-500" />, color: stats.ordenes_sin_cobrar > 0 ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200' },
+          { label: 'Pedidos',       value: stats.total_ordenes,          icon: <TrendingUp size={20} className="text-blue-600" />,   color: 'bg-blue-50 border-blue-200' },
+          { label: 'Efectivo',      value: fmt(stats.total_efectivo),    icon: <DollarSign size={20} className="text-green-600" />,  color: 'bg-green-50 border-green-200' },
+          { label: 'Tarjeta/Trans', value: fmt(stats.total_tarjeta + stats.total_transferencia), icon: <DollarSign size={20} className="text-purple-600" />, color: 'bg-purple-50 border-purple-200' },
+          { label: 'Sin Cobrar',    value: fmt(stats.monto_sin_cobrar),  icon: <AlertTriangle size={20} className="text-red-500" />, color: stats.ordenes_sin_cobrar > 0 ? 'bg-red-50 border-red-300' : 'bg-gray-50 border-gray-200' },
         ].map((c, i) => (
-          <div key={i} className={`border-2 rounded-lg p-4 ${c.color}`}>
-            <div className="flex items-center gap-3">
+          <div key={i} className={`border-2 rounded-lg p-3 sm:p-4 ${c.color}`}>
+            <div className="flex items-center gap-2 sm:gap-3">
               {c.icon}
-              <div>
-                <p className="text-gray-500 text-xs font-medium">{c.label}</p>
-                <p className="text-xl font-black text-gray-800 mt-0.5">{c.value}</p>
+              <div className="min-w-0">
+                <p className="text-gray-500 text-[10px] sm:text-xs font-medium">{c.label}</p>
+                <p className="text-base sm:text-xl font-black text-gray-800 mt-0.5 truncate">{c.value}</p>
               </div>
             </div>
           </div>
@@ -164,7 +164,7 @@ const CashRegisterPanel: React.FC<CashRegisterPanelProps> = ({ turno }) => {
       </div>
 
       {/* ── INFO TURNO (compacta) ─────────────────────────────── */}
-      <div className="bg-white border border-gray-200 rounded-lg px-6 py-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+      <div className="bg-white border border-gray-200 rounded-lg px-3 sm:px-6 py-3 sm:py-4 grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 text-sm">
         {[
           { label: 'Cajero',          value: turno.cajero_nombre },
           { label: 'Apertura (hora)', value: (horaAperturaUTC || '—') + ' CDT' },
@@ -185,18 +185,19 @@ const CashRegisterPanel: React.FC<CashRegisterPanelProps> = ({ turno }) => {
             <button
               key={tab.id}
               onClick={() => setSeccionActiva(tab.id)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-bold whitespace-nowrap transition border-b-2 ${
+              className={`flex items-center gap-1.5 px-3 sm:px-5 py-3 text-xs sm:text-sm font-bold whitespace-nowrap transition border-b-2 flex-shrink-0 ${
                 seccionActiva === tab.id
                   ? 'border-red-600 text-red-600 bg-red-50'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
-              {tab.icon}{tab.label}
+              {tab.icon}<span className="hidden xs:inline sm:inline">{tab.label}</span>
+              <span className="xs:hidden sm:hidden">{tab.label.split(' ')[0]}</span>
             </button>
           ))}
         </div>
 
-        <div className="p-6">
+        <div className="p-3 sm:p-6">
 
           {/* ══ CONCILIACIÓN DE CAJA ══════════════════════════════ */}
           {seccionActiva === 'conciliacion' && (

@@ -198,7 +198,7 @@ const OrderCard: React.FC<{
                                             <div key={idx} className="flex justify-between items-start bg-white p-3 rounded-xl border border-slate-100">
                                                 <div>
                                                     <p className="font-black text-slate-800 uppercase italic text-xs">
-                                                        <span className="text-red-600 mr-1.5">{item.quantity}x</span>
+                                                        <span className="text-red-600 mr-1.5">{item.cantidad ?? item.quantity}x</span>
                                                         {item.nombre}
                                                     </p>
                                                     {(item.size || item.crust) && (
@@ -416,9 +416,8 @@ const BasicOrdersList: React.FC<BasicOrdersListProps> = ({ onStatusChange }) => 
     const sortByOldest = (arr: Order[]) =>
         [...arr].sort((a, b) => parseDate(a.created_at) - parseDate(b.created_at));
 
-    // Pedidos activos: no entregado/despachado/cancelado Y no liquidado
+    // Pedidos activos: no entregado/despachado/cancelado
     const isActive = (o: Order) =>
-        !o.liquidado &&
         o.status !== 'entregado' && o.status !== 'despachado' && o.status !== 'cancelado';
 
     const domicilioOrders = sortByOldest(orders.filter(o =>
@@ -441,6 +440,11 @@ const BasicOrdersList: React.FC<BasicOrdersListProps> = ({ onStatusChange }) => 
     const consumoSucursalOrders = sortByOldest(orders.filter(o =>
         isActive(o) && o.metodo_entrega === 'sucursal' && o.order_origin !== 'web'
     ));
+
+    // Historial del día: entregados y despachados (para seguimiento y liquidación)
+    const historialOrders = [...orders]
+        .filter(o => o.status === 'entregado' || o.status === 'despachado' || o.status === 'cancelado')
+        .sort((a, b) => parseDate(b.created_at) - parseDate(a.created_at));
 
     return (
         <div className="space-y-6">
@@ -473,6 +477,7 @@ const BasicOrdersList: React.FC<BasicOrdersListProps> = ({ onStatusChange }) => 
                     <p className="font-bold text-slate-300 uppercase tracking-widest text-sm italic">No hay pedidos registrados para esta fecha</p>
                 </div>
             ) : (
+                <>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <ColumnSection
                         title="A Domicilio"
@@ -508,6 +513,31 @@ const BasicOrdersList: React.FC<BasicOrdersListProps> = ({ onStatusChange }) => 
                         liquidatingId={isLiquidating}
                     />
                 </div>
+
+                {/* Historial del día — entregados, despachados, cancelados */}
+                {historialOrders.length > 0 && (
+                    <div className="mt-6">
+                        <div className="flex items-center gap-3 mb-4 px-2">
+                            <CheckCircle2 size={16} className="text-slate-400" />
+                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 italic">
+                                Historial del día — {historialOrders.length} pedido{historialOrders.length !== 1 ? 's' : ''} completado{historialOrders.length !== 1 ? 's' : ''}
+                            </h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {historialOrders.map(order => (
+                                <OrderCard
+                                    key={order.id}
+                                    order={order}
+                                    isExpanded={expandedOrder === order.id}
+                                    onToggle={() => toggleExpand(order.id)}
+                                    onLiquidar={handleLiquidar}
+                                    isLiquidating={isLiquidating === order.order_id}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+                </>
             )}
         </div>
     );

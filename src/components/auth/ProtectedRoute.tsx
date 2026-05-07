@@ -33,11 +33,38 @@ export default function ProtectedRoute({ children, role }: ProtectedRouteProps) 
         fetch(`${API_URL}/api/auth/me`, {
             headers: { 'Authorization': `Bearer ${token}` }
         })
-            .then(res => {
+            .then(async res => {
                 if (res.ok) {
+                    // Guardar siempre username y nombre para que los módulos lo lean al iniciar
+                    try {
+                        const data = await res.json();
+                        const uname = (data.username || '').trim();
+                        const nombre = (data.nombre || '').trim();
+                        if (uname) localStorage.setItem('capriccio_username', uname);
+                        if (role === 'repartidor') {
+                            // Siempre actualizar — garantiza que el nombre quede guardado
+                            const nombreRepartidor = nombre || uname;
+                            if (nombreRepartidor) {
+                                localStorage.setItem('capriccio_repartidor_nombre', nombreRepartidor);
+                            }
+                        }
+                    } catch { /* ignorar si falla el parse */ }
                     setIsAuthenticated(true);
                 } else {
-                    // Token inválido o expirado → limpiar y redirigir
+                    // Token inválido o expirado → intentar renovar PRIMERO
+                    try {
+                        const refreshRes = await fetch(`${API_URL}/api/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (refreshRes.ok) {
+                            const data = await refreshRes.json();
+                            localStorage.setItem(`capriccio_token_${role}`, data.token);
+                            setIsAuthenticated(true);
+                            return;
+                        }
+                    } catch { /* si refresh falla por red, caemos al else */ }
+                    // Solo limpiar si el refresh también falló
                     localStorage.removeItem(`capriccio_token_${role}`);
                     localStorage.removeItem('capriccio_user_role');
                     localStorage.removeItem('capriccio_username');

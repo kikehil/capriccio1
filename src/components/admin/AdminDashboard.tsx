@@ -317,7 +317,7 @@ const AdminDashboard = () => {
                 );
             }
 
-            if (plan === 'basico') {
+            if (plan === 'basico' || plan === 'full') {
                 return (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                         {/* Stats Summary Cards for Basic Plan */}
@@ -350,7 +350,7 @@ const AdminDashboard = () => {
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-400 mb-2">Plan</p>
-                                    <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest italic">Básico</span>
+                                    <span className="bg-red-600 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest italic">{plan === 'full' ? 'Full' : 'Básico'}</span>
                                 </div>
                             </div>
                         </div>

@@ -38,8 +38,10 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         imagen: '',
         categoria: '🍕 Pizzas',
         activo: true,
-        precios: { mini: '', chica: '', mediana: '', grande: '' } as Record<string, string>
+        precios: { mini: '', chica: '', mediana: '', grande: '' } as Record<string, string>,
+        ingredientes: [] as string[],
     });
+    const [ingredienteInput, setIngredienteInput] = useState('');
 
     const hasSizes = formData.categoria === '🍕 Pizzas';
 
@@ -54,6 +56,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
 
     const openCreateModal = () => {
         setEditingProduct(null);
+        setIngredienteInput('');
         setFormData({
             nombre: '',
             descripcion: '',
@@ -61,7 +64,8 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
             imagen: '',
             categoria: '🍕 Pizzas',
             activo: true,
-            precios: { mini: '', chica: '', mediana: '', grande: '' }
+            precios: { mini: '', chica: '', mediana: '', grande: '' },
+            ingredientes: [],
         });
         setIsModalOpen(true);
     };
@@ -79,14 +83,23 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                 grande:  raw.grande  != null ? String(raw.grande)  : '',
             };
         }
+        // Parse ingredientes
+        let ingArr: string[] = [];
+        if (product.ingredientes) {
+            ingArr = Array.isArray(product.ingredientes)
+                ? product.ingredientes
+                : JSON.parse(product.ingredientes as any);
+        }
+        setIngredienteInput('');
         setFormData({
-            nombre:      product.nombre,
-            descripcion: product.descripcion,
-            precio:      String(product.precio),
-            imagen:      product.imagen,
-            categoria:   product.categoria,
-            activo:      product.activo,
-            precios:     preciosObj
+            nombre:       product.nombre,
+            descripcion:  product.descripcion,
+            precio:       String(product.precio),
+            imagen:       product.imagen,
+            categoria:    product.categoria,
+            activo:       product.activo,
+            precios:      preciosObj,
+            ingredientes: ingArr,
         });
         setIsModalOpen(true);
     };
@@ -135,11 +148,12 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
             }
 
             const body: Record<string, any> = {
-                nombre:      formData.nombre,
-                descripcion: formData.descripcion,
-                imagen:      formData.imagen,
-                categoria:   formData.categoria,
-                activo:      formData.activo,
+                nombre:       formData.nombre,
+                descripcion:  formData.descripcion,
+                imagen:       formData.imagen,
+                categoria:    formData.categoria,
+                activo:       formData.activo,
+                ingredientes: formData.ingredientes,
             };
 
             if (hasSizes && preciosPayload) {
@@ -173,6 +187,21 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const addIngrediente = () => {
+        const val = ingredienteInput.trim();
+        if (!val) return;
+        if (formData.ingredientes.map(i => i.toLowerCase()).includes(val.toLowerCase())) {
+            setIngredienteInput('');
+            return;
+        }
+        setFormData(prev => ({ ...prev, ingredientes: [...prev.ingredientes, val] }));
+        setIngredienteInput('');
+    };
+
+    const removeIngrediente = (ing: string) => {
+        setFormData(prev => ({ ...prev, ingredientes: prev.ingredientes.filter(i => i !== ing) }));
     };
 
     // Helper: display price summary in list
@@ -447,14 +476,72 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Ingredientes / Descripción</label>
+                                        <label className="block text-xs font-black uppercase text-slate-500 mb-2 tracking-wider">Descripción</label>
                                         <textarea
                                             required
                                             value={formData.descripcion}
                                             onChange={e => setFormData({ ...formData, descripcion: e.target.value })}
                                             className="w-full p-4 bg-slate-50 rounded-2xl border-none text-slate-900 font-bold focus:ring-2 focus:ring-capriccio-gold outline-none resize-none h-24"
-                                            placeholder="Pepperoni, Queso, Salsa de tomate..."
+                                            placeholder="Breve descripción del producto..."
                                         />
+                                    </div>
+
+                                    {/* ── Ingredientes (tags) — para sugerir extras al cliente ── */}
+                                    <div>
+                                        <label className="block text-xs font-black uppercase text-slate-500 mb-1 tracking-wider">
+                                            Ingredientes{' '}
+                                            <span className="text-slate-400 text-[10px] normal-case font-bold">
+                                                (se sugieren como extras al cliente)
+                                            </span>
+                                        </label>
+
+                                        {/* Tags actuales */}
+                                        {formData.ingredientes.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mb-2">
+                                                {formData.ingredientes.map(ing => (
+                                                    <span
+                                                        key={ing}
+                                                        className="flex items-center gap-1 bg-capriccio-gold/20 text-slate-800 text-xs font-bold px-3 py-1.5 rounded-full"
+                                                    >
+                                                        {ing}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeIngrediente(ing)}
+                                                            className="text-slate-400 hover:text-red-600 transition-colors ml-0.5"
+                                                        >
+                                                            <X size={11} strokeWidth={3} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Input para agregar */}
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={ingredienteInput}
+                                                onChange={e => setIngredienteInput(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        addIngrediente();
+                                                    }
+                                                }}
+                                                className="flex-1 p-3 bg-slate-50 rounded-2xl border-none text-slate-900 font-bold focus:ring-2 focus:ring-capriccio-gold outline-none text-sm"
+                                                placeholder="Ej: Pepperoni, Champiñón, Tocino..."
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addIngrediente}
+                                                className="p-3 bg-capriccio-gold rounded-2xl text-slate-900 hover:bg-yellow-400 transition-colors"
+                                            >
+                                                <Plus size={18} strokeWidth={3} />
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 font-bold mt-1.5 italic">
+                                            Presiona Enter o + para agregar cada ingrediente.
+                                        </p>
                                     </div>
                                 </form>
                             </div>

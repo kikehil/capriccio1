@@ -7,6 +7,7 @@ export interface Pizza {
     categoria: string;
     activo: boolean; // Control de disponibilidad
     precios?: Record<string, number>; // Precios variantes dependiendo el tamaño
+    ingredientes?: string[];          // Ingredientes de la especialidad (para extras)
 }
 
 // "🔥 Promos", "🍕 Pizzas", "🍔 Hamburguesas", "🍟 Snacks & Más"

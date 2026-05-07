@@ -20,6 +20,7 @@ import InvitaModal from '@/components/layout/InvitaModal';
 import CookieBanner from '@/components/layout/CookieBanner';
 import FacebookFeed from '@/components/layout/FacebookFeed';
 import InstallPrompt from '@/components/layout/InstallPrompt';
+import ExtrasModal, { ExtraItem } from '@/components/pizza/ExtrasModal';
 
 
 export default function Home() {
@@ -30,6 +31,13 @@ export default function Home() {
   const [selectedPizza, setSelectedPizza] = useState<Pizza | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState<{
+    pizza: Pizza;
+    sizeInfo: any;
+    crustInfo: any;
+    finalPrice: number;
+  } | null>(null);
+  const [isExtrasModalOpen, setIsExtrasModalOpen] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const [cartForceOpen, setCartForceOpen] = useState(false);
   const [horarioModal, setHorarioModal] = useState<'antes' | 'despues' | 'emergencia' | null>(null);
@@ -75,6 +83,9 @@ export default function Home() {
             const parsedData = data.map((item: any) => ({
               ...item,
               precios: typeof item.precios === 'string' ? JSON.parse(item.precios) : item.precios,
+              ingredientes: typeof item.ingredientes === 'string'
+                ? (() => { try { return JSON.parse(item.ingredientes); } catch { return []; } })()
+                : (Array.isArray(item.ingredientes) ? item.ingredientes : []),
               activo: item.activo === 1 || item.activo === true
             }));
             // Sort to make Jumbo first
@@ -101,6 +112,9 @@ export default function Home() {
       const parsedData = updatedMenu.map((item: any) => ({
         ...item,
         precios: typeof item.precios === 'string' ? JSON.parse(item.precios) : item.precios,
+        ingredientes: typeof item.ingredientes === 'string'
+          ? (() => { try { return JSON.parse(item.ingredientes); } catch { return []; } })()
+          : (Array.isArray(item.ingredientes) ? item.ingredientes : []),
         activo: item.activo === 1 || item.activo === true
       }));
       parsedData.sort((a: any, b: any) => {
@@ -136,27 +150,83 @@ export default function Home() {
     setIsModalOpen(true);
   };
 
-  const addToCart = (pizza: Pizza, selectedSizeInfo: any, selectedCrustInfo: any, finalPrice: number) => {
-    // Generate a unique ID for this cart entry based on pizza ID, size, and crust
-    const cartId = `${pizza.id}-${selectedSizeInfo.id}-${selectedCrustInfo.id}`;
+  const finalizeAddToCart = (
+    pizza: Pizza,
+    selectedSizeInfo: any,
+    selectedCrustInfo: any,
+    finalPrice: number,
+    extras: ExtraItem[]
+  ) => {
+    const baseCartId = `${pizza.id}-${selectedSizeInfo.id}-${selectedCrustInfo.id}`;
+    const extrasTotal = extras.reduce((s, e) => s + e.precio * e.cantidad, 0);
+    const totalWithExtras = finalPrice + extrasTotal;
 
-    const existing = cart.find(item => item.cartId === cartId);
+    // Expand each extra by cantidad so the server can insert one row per unit
+    const expandedExtras = extras.flatMap(e =>
+      Array.from({ length: e.cantidad }, () => ({ id: e.id, nombre: e.nombre, precio: e.precio }))
+    );
+
+    // Items with extras always get a unique cartId to avoid merging with a "plain" version
+    const cartId = expandedExtras.length > 0 ? `${baseCartId}-${Date.now()}` : baseCartId;
+
+    const existing = expandedExtras.length === 0 ? cart.find(item => item.cartId === cartId) : null;
     if (existing) {
       setCart(cart.map(item =>
         item.cartId === cartId ? { ...item, quantity: item.quantity + 1 } : item
       ));
     } else {
-      setCart([...cart, {
+      setCart(prev => [...prev, {
         ...pizza,
         size: selectedSizeInfo.label,
         crust: selectedCrustInfo.label !== 'Sin Orilla Rellena' ? selectedCrustInfo.label : undefined,
-        extras: [],
-        totalItemPrice: finalPrice,
+        extras: expandedExtras,
+        totalItemPrice: totalWithExtras,
         quantity: 1,
-        cartId
+        cartId,
+        nota: selectedSizeInfo.nota || undefined,
+        sauce: selectedSizeInfo.sauce || undefined,
       }]);
     }
+
     setIsModalOpen(false);
+    setIsExtrasModalOpen(false);
+    setPendingProduct(null);
+    showNotification(`¡${pizza.nombre} agregado al carrito! 🍕`);
+  };
+
+  const addToCart = (pizza: Pizza, selectedSizeInfo: any, selectedCrustInfo: any, finalPrice: number) => {
+    const ingredientes: string[] = Array.isArray(pizza.ingredientes) ? pizza.ingredientes : [];
+    if (ingredientes.length > 0) {
+      // Guardar para después del modal de extras
+      setPendingProduct({ pizza, sizeInfo: selectedSizeInfo, crustInfo: selectedCrustInfo, finalPrice });
+      setIsModalOpen(false);
+      setIsExtrasModalOpen(true);
+      return;
+    }
+    // Sin ingredientes configurados → agregar directo
+    finalizeAddToCart(pizza, selectedSizeInfo, selectedCrustInfo, finalPrice, []);
+  };
+
+  const handleExtrasConfirm = (extras: ExtraItem[]) => {
+    if (!pendingProduct) return;
+    finalizeAddToCart(
+      pendingProduct.pizza,
+      pendingProduct.sizeInfo,
+      pendingProduct.crustInfo,
+      pendingProduct.finalPrice,
+      extras
+    );
+  };
+
+  const handleExtrasSkip = () => {
+    if (!pendingProduct) return;
+    finalizeAddToCart(
+      pendingProduct.pizza,
+      pendingProduct.sizeInfo,
+      pendingProduct.crustInfo,
+      pendingProduct.finalPrice,
+      []
+    );
   };
 
   const addPromoToCart = (promoItem: any) => {
@@ -225,6 +295,9 @@ export default function Home() {
       lat: userData.lat,
       lng: userData.lng,
       metodo_entrega: userData.metodo_entrega || 'domicilio',
+      // Pago seleccionado por el cliente
+      payment_method: userData.payment_method || 'efectivo',
+      monto_pago: userData.monto_pago || 0,
       // Vincula el pedido a la cuenta del cliente registrado
       telefono_cliente: clienteTelefono || userData.telefono,
     };
@@ -318,21 +391,6 @@ return (
           </motion.a>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="flex flex-wrap justify-center gap-6 md:gap-12"
-        >
-          <div className="flex items-center gap-3 text-white/80">
-            <Clock className="w-5 h-5 text-capriccio-gold" />
-            <span className="text-xs font-bold uppercase tracking-widest">30 MIN</span>
-          </div>
-          <div className="flex items-center gap-3 text-white/80">
-            <MapPin className="w-5 h-5 text-capriccio-gold" />
-            <span className="text-xs font-bold uppercase tracking-widest">A DOMICILIO</span>
-          </div>
-        </motion.div>
       </div>
     </section>
 
@@ -423,6 +481,16 @@ return (
       onClose={() => setIsModalOpen(false)}
       onConfirm={addToCart}
       pizzasList={menu}
+    />
+    <ExtrasModal
+      isOpen={isExtrasModalOpen}
+      pizzaNombre={pendingProduct?.pizza.nombre ?? ''}
+      pizzaIngredientes={pendingProduct?.pizza.ingredientes ?? []}
+      sizeId={pendingProduct?.sizeInfo.id ?? 'mediana'}
+      sizeLabel={pendingProduct?.sizeInfo.label ?? ''}
+      onConfirm={handleExtrasConfirm}
+      onSkip={handleExtrasSkip}
+      onClose={handleExtrasSkip}
     />
     <CheckoutModal
       isOpen={isCheckoutOpen}

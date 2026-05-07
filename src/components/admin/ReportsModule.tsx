@@ -232,7 +232,7 @@ const ReportsModule: React.FC = () => {
                                             <td className="p-5 font-bold italic">{v.cliente_nombre || 'Interno'}</td>
                                             <td className="p-5 font-medium">
                                                 <div className="max-w-[200px] truncate text-[11px] uppercase opacity-70">
-                                                    {v.items?.map(it => `${it.quantity}x ${it.nombre}`).join(', ')}
+                                                    {v.items?.map(it => `${it.cantidad ?? it.quantity ?? '?'}x ${it.nombre}`).join(', ')}
                                                 </div>
                                             </td>
                                             <td className="p-5 text-center">

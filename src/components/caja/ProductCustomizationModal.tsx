@@ -13,15 +13,60 @@ interface Pizza {
   categoria: string;
   activo: boolean;
   precios?: Record<string, number>;
+  ingredientes?: string[];
+}
+
+// Precio de extras por tamaño (igual que portal)
+const EXTRA_PRICE_BY_SIZE: Record<string, number> = {
+  mini: 10, chica: 10, mediana: 25, grande: 30, jumbo: 50, unica: 10,
+};
+const ADEREZO_PRICE = 10;
+const INGREDIENTE_LABELS: Record<string, string> = {
+  'champiñon': 'Champiñón', 'champiñón': 'Champiñón', 'mushroom': 'Champiñón',
+  'peperoni': 'Peperoni', 'pepperoni': 'Peperoni',
+  'piña': 'Piña', 'pineapple': 'Piña',
+  'salchicha': 'Salchicha',
+  'tocino': 'Tocino', 'bacon': 'Tocino',
+  'queso': 'Doble Queso', 'quesos': 'Doble Queso', 'doble queso': 'Doble Queso', 'mozzarella': 'Doble Queso',
+  'jamón': 'Jamón Extra', 'jamon': 'Jamón Extra',
+  'chorizo': 'Chorizo Extra',
+  'jalapeño': 'Jalapeño Extra', 'jalapeños': 'Jalapeño Extra', 'jalapeno': 'Jalapeño Extra',
+  'pollo': 'Pollo Extra',
+  'salami': 'Salami Extra',
+  'cebolla': 'Cebolla Extra',
+  'pimiento': 'Pimiento Extra',
+};
+
+interface CajaExtraItem {
+  id: string;
+  nombre: string;
+  precio: number;
+}
+
+function buildExtrasParaCaja(ingredientes: string[], sizeId: string): CajaExtraItem[] {
+  const seen = new Set<string>();
+  const result: CajaExtraItem[] = [];
+  const precio = EXTRA_PRICE_BY_SIZE[sizeId] ?? 10;
+  for (const ing of ingredientes) {
+    const label = INGREDIENTE_LABELS[ing.toLowerCase().trim()];
+    if (label && !seen.has(label)) {
+      seen.add(label);
+      result.push({ id: `extra-${label.toLowerCase().replace(/\s+/g, '-')}`, nombre: `EXT ${label}`, precio });
+    }
+  }
+  result.push({ id: 'aderezo-extra', nombre: 'Aderezo Extra', precio: ADEREZO_PRICE });
+  return result;
 }
 
 interface CustomizationOptions {
   size?: string;
   crust?: string;
-  extras: string[];
+  extras: { nombre: string; precio: number }[];
   cantidad: number;
   finalPrice?: number;
   displayName?: string;
+  nota?: string;
+  sauce?: string;
 }
 
 interface ProductCustomizationModalProps {
@@ -38,10 +83,14 @@ const SIZE_PRICES: Record<string, number> = {
 };
 
 const CRUST_OPTIONS = [
-  { id: 'sin-orilla', nombre: 'Sin Orilla Rellena', precio: 0 },
-  { id: 'orilla-queso', nombre: 'Orilla Rellena de Queso', precio: 45 },
-  { id: 'dedos-queso', nombre: 'Dedos de Queso', precio: 30 },
+  { id: 'sin-orilla',   nombre: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
+  { id: 'orilla-queso', nombre: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
+  { id: 'dedos-queso',  nombre: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 50 } },
 ];
+const getCrustPrice = (crustId: string, sizeId: string): number => {
+  const crust = CRUST_OPTIONS.find(c => c.id === crustId);
+  return crust?.prices[sizeId as keyof typeof crust.prices] ?? 0;
+};
 
 const PROMO_SIZES = [
   { id: '2_medianas', label: '2 Medianas', price: 245 },
@@ -70,7 +119,7 @@ const getCategoryIcon = (categoria: string): string => {
   return '🍽️';
 };
 
-type Step = 'category-select' | 'product-select' | 'customize' | 'promo';
+type Step = 'category-select' | 'product-select' | 'customize' | 'extras' | 'promo';
 
 const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   selectedProductId,
@@ -96,10 +145,19 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const [numEspecialidades, setNumEspecialidades] = useState(1);
   const [selectedEspecialidades, setSelectedEspecialidades] = useState<string[]>(['', '', '', '']);
 
+  // Extras state
+  const [selectedExtras, setSelectedExtras] = useState<Record<string, number>>({});
+
+  // Nota y salsa
+  const [notaAdicional, setNotaAdicional] = useState('');
+  const [selectedSauce, setSelectedSauce] = useState('');
+  const SAUCE_OPTIONS = ['BBQ', 'Hot BBQ', 'Mango Habanero', 'Búfalo', 'Ranch Habanero', 'Tamarindo'];
+
   // Combo promo state
   const [promoSize, setPromoSize] = useState(PROMO_SIZES[0]);
   const [promoPizza1, setPromoPizza1] = useState<Pizza | null>(null);
   const [promoPizza2, setPromoPizza2] = useState<Pizza | null>(null);
+  const [promoCrust, setPromoCrust] = useState(CRUST_OPTIONS[0]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -113,6 +171,9 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
           .map((p: any) => ({
             ...p,
             precios: typeof p.precios === 'string' ? JSON.parse(p.precios) : p.precios,
+            ingredientes: typeof p.ingredientes === 'string'
+              ? (() => { try { return JSON.parse(p.ingredientes); } catch { return []; } })()
+              : (Array.isArray(p.ingredientes) ? p.ingredientes : []),
           }));
 
         setProducts(filtered);
@@ -178,11 +239,11 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     if (isMitadYMitad && segundaMitad && canHalfAndHalf) {
       const segundaPrice = getProductPrice(segundaMitad, options.size);
       const mitadBase = Math.max(basePrice, segundaPrice);
-      const crustPrice = CRUST_OPTIONS.find(c => c.id === options.crust)?.precio || 0;
+      const crustPrice = getCrustPrice(options.crust, options.size);
       return (mitadBase + crustPrice) * options.cantidad;
     }
 
-    const crustPrice = CRUST_OPTIONS.find(c => c.id === options.crust)?.precio || 0;
+    const crustPrice = getCrustPrice(options.crust, options.size);
     return (basePrice + crustPrice) * options.cantidad;
   };
 
@@ -205,31 +266,52 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     setSelectedEspecialidades([defaultName, defaultName, defaultName, defaultName]);
   };
 
-  const handleAddToCart = () => {
+  // Avanza del customize al paso extras (si hay ingredientes) o agrega directo
+  const handleCustomizeNext = () => {
     if (!selectedProduct) return;
+    const hasIngredientes = Array.isArray(selectedProduct.ingredientes) && selectedProduct.ingredientes.length > 0;
+    if (hasIngredientes && !isJumbo) {
+      setSelectedExtras({});
+      setStep('extras');
+    } else {
+      commitAddToCart({});
+    }
+  };
+
+  const commitAddToCart = (extrasMap: Record<string, number>) => {
+    if (!selectedProduct) return;
+
+    // Build expanded extras list from extrasMap
+    const availableExtras = buildExtrasParaCaja(selectedProduct.ingredientes || [], options.size);
+    const extrasFlat: { nombre: string; precio: number }[] = [];
+    for (const extra of availableExtras) {
+      const qty = extrasMap[extra.id] ?? 0;
+      for (let i = 0; i < qty; i++) {
+        extrasFlat.push({ nombre: extra.nombre, precio: extra.precio });
+      }
+    }
+    const extrasTotal = extrasFlat.reduce((s, e) => s + e.precio, 0);
 
     let displayName = selectedProduct.nombre;
     let finalPrice = unitPrice;
 
     if (isJumbo) {
       const activeEsp = selectedEspecialidades.slice(0, numEspecialidades).filter(Boolean);
-      if (activeEsp.length > 0) {
-        displayName = `Jumbo (${numEspecialidades} Esp: ${activeEsp.join(', ')})`;
-      } else {
-        displayName = 'Jumbo';
-      }
+      displayName = activeEsp.length > 0
+        ? `Jumbo (${numEspecialidades} Esp: ${activeEsp.join(', ')})`
+        : 'Jumbo';
       finalPrice = selectedProduct.precios?.jumbo || selectedProduct.precio;
     } else if (isMitadYMitad && segundaMitad && canHalfAndHalf) {
       const baseP = getProductPrice(selectedProduct, options.size);
       const segundaP = getProductPrice(segundaMitad, options.size);
-      const crustP = CRUST_OPTIONS.find(c => c.id === options.crust)?.precio || 0;
+      const crustP = getCrustPrice(options.crust, options.size);
       finalPrice = Math.max(baseP, segundaP) + crustP;
       const crustText = options.crust !== 'sin-orilla'
         ? ` + ${CRUST_OPTIONS.find(c => c.id === options.crust)?.nombre}`
         : '';
       displayName = `${selectedProduct.nombre} + ${segundaMitad.nombre} (${options.size} - Mitad y Mitad)${crustText}`;
     } else {
-      const crustP = CRUST_OPTIONS.find(c => c.id === options.crust)?.precio || 0;
+      const crustP = getCrustPrice(options.crust, options.size);
       finalPrice = getProductPrice(selectedProduct, options.size) + crustP;
       const sizeText = options.size ? ` (${options.size})` : '';
       const crustText = options.crust !== 'sin-orilla'
@@ -241,10 +323,12 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     onAdd(selectedProduct, {
       size: options.size,
       crust: options.crust,
-      extras: [],
+      extras: extrasFlat,
       cantidad: options.cantidad,
-      finalPrice,
+      finalPrice: finalPrice + extrasTotal,
       displayName,
+      nota: notaAdicional.trim() || undefined,
+      sauce: selectedSauce || undefined,
     });
     onClose();
   };
@@ -252,11 +336,19 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const handleAddPromo = () => {
     if (!promoPizza1 || !promoPizza2) return;
 
+    // Determinar tamaño base para la promo (medianas o grandes)
+    const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+    const crustPrice = getCrustPrice(promoCrust.id, promoSizeId);
+    const finalPromoPrice = promoSize.price + crustPrice;
+
+    const crustText = promoCrust.id !== 'sin-orilla' ? ` + ${promoCrust.nombre}` : '';
+    const displayName = `Combo ${promoSize.label}: ${promoPizza1.nombre} + ${promoPizza2.nombre}${crustText}`;
+
     const virtualPizza: Pizza = {
       id: 0,
       nombre: `Combo Promo: ${promoSize.label}`,
       descripcion: `${promoPizza1.nombre} + ${promoPizza2.nombre}`,
-      precio: promoSize.price,
+      precio: finalPromoPrice,
       imagen: '',
       categoria: 'Promo',
       activo: true,
@@ -264,18 +356,18 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
 
     onAdd(virtualPizza, {
       size: promoSize.label,
-      crust: 'sin-orilla',
+      crust: promoCrust.id,
       extras: [],
       cantidad: 1,
-      finalPrice: promoSize.price,
-      displayName: `Combo ${promoSize.label}: ${promoPizza1.nombre} + ${promoPizza2.nombre}`,
+      finalPrice: finalPromoPrice,
+      displayName,
     });
     onClose();
   };
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
         <div className="bg-white rounded-xl p-6 text-center">
           <p className="text-gray-600">Cargando menú...</p>
         </div>
@@ -291,25 +383,25 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   if (step === 'promo') {
     const isComplete = promoPizza1 !== null && promoPizza2 !== null;
     return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-white border-b p-5 flex items-center gap-3">
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
+        <div className="bg-white rounded-lg sm:rounded-xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b p-3 sm:p-5 flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setStep('category-select')}
-              className="p-2 rounded-lg hover:bg-gray-100 transition text-gray-600"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition text-gray-600 flex-shrink-0"
             >
-              <ArrowLeft size={22} />
+              <ArrowLeft size={20} />
             </button>
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900">🔥 Combo Promo</h2>
-              <p className="text-sm text-gray-500">Arma tu combo de 2 pizzas</p>
+              <h2 className="text-base sm:text-2xl font-bold text-gray-900">🔥 Combo Promo</h2>
+              <p className="text-xs sm:text-sm text-gray-500">Arma tu combo de 2 pizzas</p>
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <X size={24} />
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
+              <X size={22} />
             </button>
           </div>
 
-          <div className="p-6 space-y-6">
+          <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
             {/* Tamaño */}
             <div>
               <h3 className="font-bold text-gray-800 mb-3">1. Elige el tamaño</h3>
@@ -383,26 +475,54 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
               )}
             </div>
 
-            {/* Resumen */}
-            <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-4">
-              <div className="flex justify-between items-center text-xl font-bold text-gray-900">
-                <span>Total Combo:</span>
-                <span className="text-red-600">${promoSize.price.toLocaleString()}</span>
+            {/* Orilla de Queso para la Promo */}
+            <div>
+              <h3 className="font-bold text-gray-800 mb-3">4. Orilla Rellena (opcional)</h3>
+              <div className="space-y-2">
+                {CRUST_OPTIONS.map(crust => {
+                  const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+                  const crustP = getCrustPrice(crust.id, promoSizeId);
+                  return (
+                    <button key={crust.id} type="button" onClick={() => setPromoCrust(crust)}
+                      className={`w-full flex items-center justify-between p-3 rounded-xl border-2 font-semibold transition text-left ${promoCrust.id === crust.id ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-700 hover:border-red-300'}`}>
+                      <span className="text-sm">{crust.nombre}</span>
+                      <span className="text-sm font-bold">{crustP > 0 ? `+$${crustP}` : 'Sin cargo'}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {/* Resumen */}
+            {(() => {
+              const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+              const crustP = getCrustPrice(promoCrust.id, promoSizeId);
+              const total = promoSize.price + crustP;
+              return (
+                <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-4">
+                  <div className="flex justify-between items-center text-xl font-bold text-gray-900">
+                    <span>Total Combo:</span>
+                    <span className="text-red-600">${total.toLocaleString()}</span>
+                  </div>
+                  {crustP > 0 && <p className="text-sm text-gray-500 mt-1">Incluye orilla: +${crustP}</p>}
+                </div>
+              );
+            })()}
           </div>
 
-          <div className="sticky bottom-0 bg-white border-t p-5">
-            <button
-              onClick={handleAddPromo}
-              disabled={!isComplete}
-              className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 active:scale-95 text-white rounded-xl font-bold text-lg transition flex items-center justify-center gap-3"
-            >
-              <ShoppingCart size={22} />
-              {isComplete
-                ? `Agregar Combo — $${promoSize.price.toLocaleString()}`
-                : 'Selecciona ambas pizzas'}
-            </button>
+          <div className="sticky bottom-0 bg-white border-t p-3 sm:p-5">
+            {(() => {
+              const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+              const crustP = getCrustPrice(promoCrust.id, promoSizeId);
+              const total = promoSize.price + crustP;
+              return (
+                <button onClick={handleAddPromo} disabled={!isComplete}
+                  className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 active:scale-95 text-white rounded-xl font-bold text-base sm:text-lg transition flex items-center justify-center gap-3">
+                  <ShoppingCart size={20} />
+                  {isComplete ? `Agregar Combo — $${total.toLocaleString()}` : 'Selecciona ambas pizzas'}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -412,17 +532,17 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   // ─── STEP 1: CATEGORY SELECT ─────────────────────────────────────────────────
   if (step === 'category-select') {
     return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-white border-b p-5 flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-900">¿Qué tipo de producto?</h2>
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
+        <div className="bg-white rounded-lg sm:rounded-xl shadow-2xl max-w-3xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b p-4 sm:p-5 flex justify-between items-center">
+            <h2 className="text-lg sm:text-2xl font-bold text-gray-900">¿Qué tipo de producto?</h2>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
               <X size={24} />
             </button>
           </div>
 
-          <div className="p-6">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="p-3 sm:p-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4">
               {/* Combo Promo button */}
               <button
                 onClick={() => {
@@ -431,11 +551,11 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                   setPromoPizza2(null);
                   setStep('promo');
                 }}
-                className="flex flex-col items-center justify-center gap-3 p-6 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-400 rounded-xl hover:border-red-600 hover:bg-red-50 transition-all active:scale-95 shadow-md hover:shadow-lg"
+                className="flex flex-col items-center justify-center gap-2 p-3 sm:p-6 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-400 rounded-xl hover:border-red-600 transition-all active:scale-95 shadow-md"
               >
-                <span className="text-5xl">🔥</span>
-                <span className="font-bold text-red-700 text-center text-base leading-tight">Combo Promo</span>
-                <span className="text-xs text-red-500 font-semibold">2 pizzas al precio especial</span>
+                <span className="text-3xl sm:text-5xl">🔥</span>
+                <span className="font-bold text-red-700 text-center text-sm sm:text-base leading-tight">Combo Promo</span>
+                <span className="text-[10px] sm:text-xs text-red-500 font-semibold text-center">2 pizzas especial</span>
               </button>
 
               {categories.map(category => {
@@ -445,11 +565,11 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                   <button
                     key={category}
                     onClick={() => handleSelectCategory(category)}
-                    className="flex flex-col items-center justify-center gap-3 p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition-all active:scale-95 shadow-sm hover:shadow-md"
+                    className="flex flex-col items-center justify-center gap-2 p-3 sm:p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition-all active:scale-95 shadow-sm"
                   >
-                    <span className="text-5xl">{icon}</span>
-                    <span className="font-bold text-gray-800 text-center text-base leading-tight">{category}</span>
-                    <span className="text-xs text-gray-500">{count} producto{count !== 1 ? 's' : ''}</span>
+                    <span className="text-3xl sm:text-5xl">{icon}</span>
+                    <span className="font-bold text-gray-800 text-center text-xs sm:text-base leading-tight">{category}</span>
+                    <span className="text-[10px] sm:text-xs text-gray-500">{count} prod{count !== 1 ? 's' : ''}</span>
                   </button>
                 );
               })}
@@ -464,27 +584,27 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   if (step === 'product-select') {
     const categoryProducts = products.filter(p => p.categoria === selectedCategory);
     return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
         <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-white border-b p-5 flex items-center gap-3">
+          <div className="sticky top-0 bg-white border-b p-3 sm:p-5 flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setStep('category-select')}
-              className="p-2 rounded-lg hover:bg-gray-100 transition text-gray-600"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition text-gray-600 flex-shrink-0"
             >
-              <ArrowLeft size={22} />
+              <ArrowLeft size={20} />
             </button>
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base sm:text-2xl font-bold text-gray-900 truncate">
                 {getCategoryIcon(selectedCategory!)} {selectedCategory}
               </h2>
             </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <X size={24} />
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
+              <X size={22} />
             </button>
           </div>
 
-          <div className="p-6">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="p-3 sm:p-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4">
               {[...categoryProducts]
                 .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
                 .map(pizza => (
@@ -497,21 +617,134 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                       <img
                         src={pizza.imagen}
                         alt={pizza.nombre}
-                        className="w-full h-36 object-cover group-hover:scale-105 transition"
+                        className="w-full h-24 sm:h-36 object-cover group-hover:scale-105 transition"
                       />
                     ) : (
-                      <div className="w-full h-36 bg-gray-100 flex items-center justify-center text-4xl">
+                      <div className="w-full h-24 sm:h-36 bg-gray-100 flex items-center justify-center text-3xl sm:text-4xl">
                         {getCategoryIcon(pizza.categoria)}
                       </div>
                     )}
-                    <div className="p-3 bg-white">
-                      <p className="font-bold text-sm text-gray-800 leading-tight">{pizza.nombre}</p>
-                      <p className="text-red-600 font-bold text-sm mt-1">
+                    <div className="p-2 sm:p-3 bg-white">
+                      <p className="font-bold text-xs sm:text-sm text-gray-800 leading-tight">{pizza.nombre}</p>
+                      <p className="text-red-600 font-bold text-xs sm:text-sm mt-0.5">
                         desde ${pizza.precio.toLocaleString()}
                       </p>
                     </div>
                   </button>
                 ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── STEP 4: EXTRAS ─────────────────────────────────────────────────────────
+  if (step === 'extras' && selectedProduct) {
+    const availableExtras = buildExtrasParaCaja(selectedProduct.ingredientes || [], options.size);
+    const extrasTotal = availableExtras.reduce((s, e) => {
+      const qty = selectedExtras[e.id] ?? 0;
+      return s + e.precio * qty;
+    }, 0);
+
+    const toggleExtra = (extra: CajaExtraItem) => {
+      setSelectedExtras(prev => {
+        if (prev[extra.id]) {
+          const next = { ...prev }; delete next[extra.id]; return next;
+        }
+        return { ...prev, [extra.id]: 1 };
+      });
+    };
+
+    const setCantidadExtra = (extra: CajaExtraItem, delta: number) => {
+      setSelectedExtras(prev => {
+        const cur = prev[extra.id] ?? 0;
+        const next = Math.max(0, cur + delta);
+        if (next === 0) { const r = { ...prev }; delete r[extra.id]; return r; }
+        return { ...prev, [extra.id]: next };
+      });
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
+        <div className="bg-white rounded-lg sm:rounded-xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b p-3 sm:p-5 flex items-center gap-2 sm:gap-3">
+            <button onClick={() => setStep('customize')} className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition text-gray-600 flex-shrink-0">
+              <ArrowLeft size={20} />
+            </button>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base sm:text-xl font-bold text-gray-900 truncate">¿Extras para {selectedProduct.nombre}?</h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                {options.size} — ${EXTRA_PRICE_BY_SIZE[options.size] ?? 10} c/u · Aderezo $10
+              </p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 flex-shrink-0"><X size={22} /></button>
+          </div>
+
+          <div className="p-3 sm:p-6 space-y-2 sm:space-y-3">
+            {availableExtras.map(extra => {
+              const qty = selectedExtras[extra.id] ?? 0;
+              const isSelected = qty > 0;
+              return (
+                <div
+                  key={extra.id}
+                  className={`flex items-center justify-between p-4 rounded-xl border-2 transition ${
+                    isSelected ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => toggleExtra(extra)}>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition ${
+                      isSelected ? 'bg-red-600 border-red-600' : 'border-gray-400'
+                    }`}>
+                      {isSelected && <Check size={12} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-gray-800">{extra.nombre}</p>
+                      <p className="text-xs text-gray-500">+${extra.precio} c/u</p>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div className="flex items-center gap-2 ml-3">
+                      <button onClick={() => setCantidadExtra(extra, -1)} className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition">
+                        <Minus size={13} />
+                      </button>
+                      <span className="font-black text-sm w-4 text-center text-gray-800">{qty}</span>
+                      <button onClick={() => setCantidadExtra(extra, 1)} className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-700 transition">
+                        <Plus size={13} />
+                      </button>
+                    </div>
+                  )}
+                  {!isSelected && <span className="text-gray-400 text-xs font-bold ml-3">+${extra.precio}</span>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="sticky bottom-0 bg-white border-t p-3 sm:p-5 space-y-2">
+            {extrasTotal > 0 && (
+              <div className="flex justify-between text-sm text-gray-600 px-1 mb-1">
+                <span>{Object.keys(selectedExtras).length} extra(s) seleccionados</span>
+                <span className="font-black text-red-600">+${extrasTotal}</span>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => commitAddToCart(selectedExtras)}
+                className="flex-1 py-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl font-bold text-lg transition flex items-center justify-center gap-3"
+              >
+                <ShoppingCart size={22} />
+                {extrasTotal > 0
+                  ? `Agregar (+$${extrasTotal}) — $${(totalPrice + extrasTotal).toLocaleString()}`
+                  : `Agregar — $${totalPrice.toLocaleString()}`}
+              </button>
+              <button
+                onClick={() => commitAddToCart({})}
+                title="Sin extras"
+                className="w-14 h-14 flex-shrink-0 bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 hover:border-gray-400 text-gray-600 rounded-xl font-bold text-xs transition flex flex-col items-center justify-center gap-0.5 active:scale-95"
+              >
+                <X size={18} />
+                <span className="text-[10px]">Sin ext.</span>
+              </button>
             </div>
           </div>
         </div>
@@ -529,32 +762,32 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* HEADER */}
-        <div className="sticky top-0 bg-white border-b p-5 flex items-center gap-3">
+        <div className="sticky top-0 bg-white border-b p-3 sm:p-5 flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => { setStep('product-select'); setSelectedProduct(null); }}
-            className="p-2 rounded-lg hover:bg-gray-100 transition text-gray-600"
+            className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition text-gray-600 flex-shrink-0"
           >
-            <ArrowLeft size={22} />
+            <ArrowLeft size={20} />
           </button>
-          <div className="flex-1">
-            <h2 className="text-xl font-bold text-gray-900">{selectedProduct?.nombre}</h2>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base sm:text-xl font-bold text-gray-900 truncate">{selectedProduct?.nombre}</h2>
             {selectedProduct?.descripcion && (
-              <p className="text-gray-500 text-sm mt-0.5">{selectedProduct.descripcion}</p>
+              <p className="text-gray-500 text-xs sm:text-sm mt-0.5 line-clamp-1">{selectedProduct.descripcion}</p>
             )}
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X size={24} />
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
+            <X size={22} />
           </button>
         </div>
 
         {/* CONTENT */}
-        <div className="p-6 space-y-6">
+        <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
           {selectedProduct?.imagen && (
             <div className="flex justify-center">
               <img
                 src={selectedProduct.imagen}
                 alt={selectedProduct.nombre}
-                className="w-40 h-40 object-cover rounded-xl shadow"
+                className="w-28 h-28 sm:w-40 sm:h-40 object-cover rounded-xl shadow"
               />
             </div>
           )}
@@ -704,28 +937,31 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
             <div>
               <h3 className="font-bold text-gray-800 mb-3">Orilla Rellena</h3>
               <div className="space-y-2">
-                {CRUST_OPTIONS.map(crust => (
-                  <label
-                    key={crust.id}
-                    className={`flex items-center p-3 border-2 rounded-xl cursor-pointer transition ${
-                      options.crust === crust.id
-                        ? 'border-red-500 bg-red-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="crust"
-                      checked={options.crust === crust.id}
-                      onChange={() => setOptions(prev => ({ ...prev, crust: crust.id }))}
-                      className="w-4 h-4 text-red-600"
-                    />
-                    <span className="flex-1 ml-3 font-medium text-gray-800">{crust.nombre}</span>
-                    {crust.precio > 0 && (
-                      <span className="text-red-600 font-bold">+${crust.precio}</span>
-                    )}
-                  </label>
-                ))}
+                {CRUST_OPTIONS.map(crust => {
+                  const crustPrecio = getCrustPrice(crust.id, options.size);
+                  return (
+                    <label
+                      key={crust.id}
+                      className={`flex items-center p-3 border-2 rounded-xl cursor-pointer transition ${
+                        options.crust === crust.id
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="crust"
+                        checked={options.crust === crust.id}
+                        onChange={() => setOptions(prev => ({ ...prev, crust: crust.id }))}
+                        className="w-4 h-4 text-red-600"
+                      />
+                      <span className="flex-1 ml-3 font-medium text-gray-800">{crust.nombre}</span>
+                      {crustPrecio > 0 && (
+                        <span className="text-red-600 font-bold">+${crustPrecio}</span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -750,6 +986,30 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
             </div>
           </div>
 
+          {/* SELECTOR DE SALSA (hamburguesas/boneless) */}
+          {(selectedProduct?.categoria?.toLowerCase().includes('hamburguesa') ||
+            selectedProduct?.nombre?.toLowerCase().includes('boneless')) && (
+            <div className="border border-orange-200 rounded-xl p-4 bg-orange-50">
+              <p className="text-sm font-bold text-gray-700 mb-2">🥣 Tipo de Salsa</p>
+              <div className="grid grid-cols-3 gap-2">
+                {SAUCE_OPTIONS.map(s => (
+                  <button key={s} type="button" onClick={() => setSelectedSauce(selectedSauce === s ? '' : s)}
+                    className={`py-2 px-2 rounded-lg border-2 text-xs font-semibold transition ${selectedSauce === s ? 'border-orange-500 bg-orange-100 text-orange-700' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NOTA ADICIONAL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">📝 Nota adicional (opcional)</label>
+            <input type="text" placeholder="Ej: sin cebolla, extra jalapeño, bien cocida..."
+              value={notaAdicional} onChange={e => setNotaAdicional(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 outline-none text-gray-900 bg-white text-sm" />
+          </div>
+
           {/* RESUMEN */}
           <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-5">
             <div className="space-y-2">
@@ -770,13 +1030,15 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
         </div>
 
         {/* FOOTER */}
-        <div className="sticky bottom-0 bg-white border-t p-5">
+        <div className="sticky bottom-0 bg-white border-t p-3 sm:p-5">
           <button
-            onClick={handleAddToCart}
-            className="w-full py-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl font-bold text-lg transition flex items-center justify-center gap-3"
+            onClick={handleCustomizeNext}
+            className="w-full py-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl font-bold text-base sm:text-lg transition flex items-center justify-center gap-2 sm:gap-3"
           >
             <ShoppingCart size={22} />
-            Agregar al Pedido — ${totalPrice.toLocaleString()}
+            {Array.isArray(selectedProduct?.ingredientes) && selectedProduct!.ingredientes.length > 0 && !isJumbo
+              ? `Siguiente — $${totalPrice.toLocaleString()}`
+              : `Agregar al Pedido — $${totalPrice.toLocaleString()}`}
           </button>
         </div>
       </div>

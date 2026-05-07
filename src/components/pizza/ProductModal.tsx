@@ -15,12 +15,16 @@ const SIZE_OPTIONS = [
     { id: 'grande', label: 'Grande', price: 255 }
 ];
 
-// Opciones de Orillas para Mediana y Grande
+// Opciones de Orillas — precio varía según tamaño
 const CRUST_OPTIONS = [
-    { id: 'normal', label: 'Sin Orilla Rellena', price: 0 },
-    { id: 'rellena', label: '🧀 Añadir Orilla Rellena', price: 45 },
-    { id: 'dedos', label: '🥖 Añadir Orilla Dedos de Queso', price: 60 }
+    { id: 'normal',  label: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
+    { id: 'rellena', label: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
+    { id: 'dedos',   label: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 50 } },
 ];
+
+// Precio de la orilla según el tamaño seleccionado
+const getCrustPrice = (crust: typeof CRUST_OPTIONS[0], sizeId: string): number =>
+    crust.prices[sizeId as keyof typeof crust.prices] ?? 0;
 
 export interface ProductModalProps {
     pizza: Pizza | null;
@@ -70,6 +74,13 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
     // Mitad y mitad variables
     const [isMitadYMitad, setIsMitadYMitad] = useState(false);
     const [segundaMitad, setSegundaMitad] = useState("");
+    // Nota adicional y salsa
+    const [notaAdicional, setNotaAdicional] = useState('');
+    const [selectedSauce, setSelectedSauce] = useState('');
+
+    const SAUCE_OPTIONS = ['BBQ', 'Hot BBQ', 'Mango Habanero', 'Búfalo', 'Ranch Habanero', 'Tamarindo'];
+    const needsSauce = pizza?.categoria?.toLowerCase().includes('hamburguesa') ||
+        pizza?.nombre?.toLowerCase().includes('boneless');
 
     useEffect(() => {
         if (isOpen && availableSizes.length > 0) {
@@ -80,6 +91,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
             setSelectedEspecialidades([defaultEspecialidad, defaultEspecialidad, defaultEspecialidad, defaultEspecialidad]);
             setIsMitadYMitad(false);
             setSegundaMitad("");
+            setNotaAdicional('');
+            setSelectedSauce('');
         }
     }, [isOpen, pizza, availableSizes, defaultEspecialidad]);
 
@@ -87,10 +100,11 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
 
     // Solo mostrar orillas si es Pizza y de tamaño mediano o grande
     const isPizzaCategory = pizza.categoria?.toLowerCase().includes('pizza');
-    const showCrustOptions = isPizzaCategory && (selectedSize?.id === 'mediana' || selectedSize?.id === 'grande' || selectedSize?.id === 'jumbo');
+    const showCrustOptions = isPizzaCategory && (selectedSize?.id === 'chica' || selectedSize?.id === 'mediana' || selectedSize?.id === 'grande' || selectedSize?.id === 'jumbo');
     const canHalfAndHalf = !isJumbo && isPizzaCategory && (selectedSize?.id === 'mediana' || selectedSize?.id === 'grande');
 
     const appliedCrust = showCrustOptions ? selectedCrust : CRUST_OPTIONS[0];
+    const appliedCrustPrice = getCrustPrice(appliedCrust, selectedSize?.id || 'mediana');
 
     // Precio Jumbo: siempre fijo (315) sin importar cuántas especialidades se elijan
     const jumboBasePrice = pizza.precio || selectedSize?.price || 0;
@@ -109,7 +123,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
 
     // Si es Jumbo → precio fijo de la pizza; si no → lógica de mitad/tamaño
     const basePrice = isJumbo ? jumboBasePrice : mitadBasePrice;
-    const finalPrice = basePrice + appliedCrust.price;
+    const finalPrice = basePrice + appliedCrustPrice;
 
     return (
         <AnimatePresence>
@@ -316,7 +330,9 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                         >
                                             <h4 className="text-xs font-black text-capriccio-gold uppercase tracking-[0.2em] mb-4">¡Mejora tu pizza!</h4>
                                             <div className="space-y-3">
-                                                {CRUST_OPTIONS.map(crust => (
+                                                {CRUST_OPTIONS.map(crust => {
+                                                    const crustPrice = getCrustPrice(crust, selectedSize?.id || 'mediana');
+                                                    return (
                                                     <div
                                                         key={crust.id}
                                                         onClick={() => setSelectedCrust(crust)}
@@ -339,14 +355,15 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                                                 selectedCrust.id === crust.id ? "text-white" : "text-gray-300"
                                                             )}>{crust.label}</span>
                                                         </div>
-                                                        {crust.price > 0 && (
+                                                        {crustPrice > 0 && (
                                                             <span className={cn(
                                                                 "font-black text-sm",
                                                                 selectedCrust.id === crust.id ? "text-capriccio-gold" : "text-gray-400"
-                                                            )}>+${crust.price}</span>
+                                                            )}>+${crustPrice}</span>
                                                         )}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </motion.div>
                                     )}
@@ -359,9 +376,35 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Total a Pagar</span>
                                     <span className="text-3xl font-black text-white italic leading-none">${finalPrice}</span>
                                 </div>
+                                {/* Selector de salsa (hamburguesas/boneless) */}
+                                {needsSauce && (
+                                    <div className="w-full mb-3">
+                                        <p className="text-[10px] font-black text-capriccio-gold uppercase tracking-[0.2em] mb-2">🥣 Tipo de Salsa</p>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {SAUCE_OPTIONS.map(s => (
+                                                <button key={s} type="button" onClick={() => setSelectedSauce(s)}
+                                                    className={cn("py-2 px-2 rounded-xl border-2 text-xs font-bold transition-all",
+                                                        selectedSauce === s
+                                                            ? "border-capriccio-gold bg-capriccio-gold/15 text-white"
+                                                            : "border-white/10 bg-black/20 text-gray-400 hover:border-white/20")}>
+                                                    {s}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Nota adicional */}
+                                <div className="w-full mb-3">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">📝 Nota adicional (opcional)</p>
+                                    <input type="text" placeholder="Ej: sin cebolla, extra jalapeño..."
+                                        value={notaAdicional}
+                                        onChange={e => setNotaAdicional(e.target.value)}
+                                        className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white text-sm font-bold placeholder-gray-600 outline-none focus:border-capriccio-gold/50 transition-colors"
+                                    />
+                                </div>
                                 <button
                                     onClick={() => {
-                                        let finalSizeItem = { ...selectedSize };
+                                        let finalSizeItem: any = { ...selectedSize };
                                         if (isJumbo) {
                                             const activeEspecialidades = selectedEspecialidades.slice(0, numEspecialidades).join(", ");
                                             finalSizeItem.label = `Jumbo (${numEspecialidades} Esp: ${activeEspecialidades})`;
@@ -370,6 +413,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                             finalSizeItem.label = `${selectedSize?.label || ''} (Mitad ${pizza.nombre}, Mitad ${segundaMitad})`;
                                             finalSizeItem.id = `${selectedSize?.id || 'id'}-mitad-${segundaMitad.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`;
                                         }
+                                        if (notaAdicional.trim()) finalSizeItem.nota = notaAdicional.trim();
+                                        if (selectedSauce) finalSizeItem.sauce = selectedSauce;
                                         onConfirm(pizza, finalSizeItem, appliedCrust, finalPrice);
                                     }}
                                     className="flex-1 bg-capriccio-gold text-capriccio-dark py-4 rounded-xl font-black text-lg uppercase tracking-widest shadow-[var(--shadow-neon-yellow)] hover:bg-yellow-400 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"

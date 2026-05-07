@@ -32,8 +32,8 @@ module.exports = {
       },
       release: () => client.release(),
       begin:    async () => {},
-      commit:   async () => { await client.query('COMMIT');   client.release(); },
-      rollback: async () => { await client.query('ROLLBACK'); client.release(); }
+      commit:   async () => { await client.query('COMMIT');   },
+      rollback: async () => { await client.query('ROLLBACK'); }
     };
   },
   pool

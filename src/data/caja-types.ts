@@ -11,6 +11,8 @@ export interface CajaItem {
   size?: string;
   crust?: string;
   extras?: CajaExtra[];
+  nota?: string;   // Nota adicional (sin cebolla, etc.)
+  sauce?: string;  // Tipo de salsa (hamburguesas / boneless)
 }
 
 export interface CajaExtra {

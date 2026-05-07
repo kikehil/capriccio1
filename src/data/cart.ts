@@ -8,4 +8,6 @@ export interface CartItem extends Pizza {
     totalItemPrice: number;
     quantity: number;
     cartId: string; // Identifier for identical configurations
+    nota?: string;  // Nota adicional del cliente (sin cebolla, etc.)
+    sauce?: string; // Tipo de salsa (para hamburguesas / boneless)
 }
