@@ -13,23 +13,27 @@ interface StepProps {
   onPrev: () => void;
 }
 
-/* ─── Genera y envía a imprimir un ticket HTML en ventana oculta ─── */
+/* ─── Imprime ticket via iframe oculto (sin popup de ventana) ─── */
+/* Con Chrome lanzado con --kiosk-printing: envía directo a impresora  */
+/* sin mostrar ningún diálogo. Sin ese flag muestra el diálogo normal. */
 function printHtmlTicket(html: string) {
-  const win = window.open('', '_blank', 'width=320,height=600,left=-1000,top=-1000');
-  if (!win) return;
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  // Esperar a que cargue el contenido antes de imprimir
-  win.onload = () => {
-    win.focus();
-    win.print();
-    setTimeout(() => win.close(), 1200);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:80mm;height:1px;opacity:0;border:none;';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+  doc.open();
+  doc.write(html);
+  doc.close();
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (_) {}
+    const cleanup = () => { if (document.body.contains(iframe)) document.body.removeChild(iframe); };
+    iframe.contentWindow?.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 15000);
   };
-  // Fallback si onload no dispara
-  setTimeout(() => {
-    try { win.focus(); win.print(); setTimeout(() => win.close(), 1200); } catch (_) {}
-  }, 600);
 }
 
 const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPrev }) => {
