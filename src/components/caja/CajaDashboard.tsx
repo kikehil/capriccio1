@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Clock, Plus, Eye, BarChart3, LogOut, Search, Package } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Clock, Plus, Eye, BarChart3, LogOut, Search, Package, ChevronUp, ChevronDown } from 'lucide-react';
 import NewOrderForm from './NewOrderForm';
 import ActiveOrdersList from './ActiveOrdersList';
 import CashRegisterPanel from './CashRegisterPanel';
@@ -34,6 +34,59 @@ interface CajaDashboardProps {
   onTurnoCreated: (turno: CajaTurno) => void;
   onLogout: () => void;
 }
+
+/* ── Floating Scroll Buttons ─────────────────────── */
+const ScrollButtons: React.FC = () => {
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+
+  const update = useCallback(() => {
+    const scrollY = window.scrollY;
+    const viewH   = window.innerHeight;
+    const docH    = document.documentElement.scrollHeight;
+    setCanScrollUp(scrollY > 120);
+    setCanScrollDown(scrollY + viewH < docH - 40);
+  }, []);
+
+  useEffect(() => {
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [update]);
+
+  if (!canScrollUp && !canScrollDown) return null;
+
+  const scrollBy = (dir: 'up' | 'down') => {
+    window.scrollBy({ top: dir === 'up' ? -320 : 320, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="fixed right-3 bottom-[72px] sm:bottom-6 z-50 flex flex-col gap-2">
+      {canScrollUp && (
+        <button
+          onClick={() => scrollBy('up')}
+          aria-label="Subir"
+          className="w-11 h-11 flex items-center justify-center bg-white border-2 border-gray-200 rounded-full shadow-lg text-gray-600 hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-90 transition-all"
+        >
+          <ChevronUp size={22} strokeWidth={2.5} />
+        </button>
+      )}
+      {canScrollDown && (
+        <button
+          onClick={() => scrollBy('down')}
+          aria-label="Bajar"
+          className="w-11 h-11 flex items-center justify-center bg-white border-2 border-gray-200 rounded-full shadow-lg text-gray-600 hover:bg-red-600 hover:text-white hover:border-red-600 active:scale-90 transition-all"
+        >
+          <ChevronDown size={22} strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+};
 
 const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, onLogout }) => {
   const [activeTab, setActiveTab] = useState<TabId>('nuevo');
@@ -256,6 +309,9 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
       {showBuscarModal && (
         <BuscarPedidoModal turno={turno} onClose={() => setShowBuscarModal(false)} />
       )}
+
+      {/* ── SCROLL BUTTONS (POS only) ─────────────────── */}
+      <ScrollButtons />
     </div>
   );
 };
