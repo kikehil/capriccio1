@@ -756,7 +756,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const showCrustOptions =
     selectedProduct &&
     isPizzaProduct(selectedProduct) &&
-    (options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
+    (options.size === 'chica' || options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -937,31 +937,35 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
             <div>
               <h3 className="font-bold text-gray-800 mb-3">Orilla Rellena</h3>
               <div className="space-y-2">
-                {CRUST_OPTIONS.map(crust => {
-                  const crustPrecio = getCrustPrice(crust.id, options.size);
-                  return (
-                    <label
-                      key={crust.id}
-                      className={`flex items-center p-3 border-2 rounded-xl cursor-pointer transition ${
-                        options.crust === crust.id
-                          ? 'border-red-500 bg-red-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="crust"
-                        checked={options.crust === crust.id}
-                        onChange={() => setOptions(prev => ({ ...prev, crust: crust.id }))}
-                        className="w-4 h-4 text-red-600"
-                      />
-                      <span className="flex-1 ml-3 font-medium text-gray-800">{crust.nombre}</span>
-                      {crustPrecio > 0 && (
-                        <span className="text-red-600 font-bold">+${crustPrecio}</span>
-                      )}
-                    </label>
-                  );
-                })}
+                {CRUST_OPTIONS
+                  // Para cada tamaño solo mostrar opciones disponibles:
+                  // sin-orilla siempre, las de pago solo si tienen precio > 0 para ese tamaño
+                  .filter(crust => crust.id === 'sin-orilla' || getCrustPrice(crust.id, options.size) > 0)
+                  .map(crust => {
+                    const crustPrecio = getCrustPrice(crust.id, options.size);
+                    return (
+                      <label
+                        key={crust.id}
+                        className={`flex items-center p-3 border-2 rounded-xl cursor-pointer transition ${
+                          options.crust === crust.id
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="crust"
+                          checked={options.crust === crust.id}
+                          onChange={() => setOptions(prev => ({ ...prev, crust: crust.id }))}
+                          className="w-4 h-4 text-red-600"
+                        />
+                        <span className="flex-1 ml-3 font-medium text-gray-800">{crust.nombre}</span>
+                        {crustPrecio > 0 && (
+                          <span className="text-red-600 font-bold">+${crustPrecio}</span>
+                        )}
+                      </label>
+                    );
+                  })}
               </div>
             </div>
           )}
