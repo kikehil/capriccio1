@@ -199,8 +199,13 @@ const BuscarPedidoModal: React.FC<BuscarPedidoModalProps> = ({ turno, onClose })
         const res = await fetch(`${API_URL}/api/caja/buscar-pedido?q=${encodeURIComponent(val.trim())}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (res.ok) setResults(await res.json());
-      } catch (e) { console.error(e); }
+        if (res.ok) {
+          setResults(await res.json());
+        } else {
+          const err = await res.json().catch(() => ({}));
+          setError(err.error || `Error al buscar (${res.status})`);
+        }
+      } catch (e) { console.error(e); setError('No se pudo conectar al servidor'); }
       finally { setSearching(false); }
     }, 350);
   };

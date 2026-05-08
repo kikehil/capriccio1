@@ -15,16 +15,15 @@ const SIZE_OPTIONS = [
     { id: 'grande', label: 'Grande', price: 255 }
 ];
 
-// Opciones de Orillas — precio varía según tamaño
-const CRUST_OPTIONS = [
-    { id: 'normal',  label: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
-    { id: 'rellena', label: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
-    { id: 'dedos',   label: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 50 } },
+// Opciones de Orillas — fallback hardcodeado (se sobreescribe con datos de la API via pizzasList)
+const DEFAULT_CRUST_OPTIONS = [
+    { id: 'normal',  label: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } as Record<string, number> },
+    { id: 'rellena', label: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } as Record<string, number> },
+    { id: 'dedos',   label: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 65 } as Record<string, number> },
 ];
 
-// Precio de la orilla según el tamaño seleccionado
-const getCrustPrice = (crust: typeof CRUST_OPTIONS[0], sizeId: string): number =>
-    crust.prices[sizeId as keyof typeof crust.prices] ?? 0;
+const getCrustPrice = (crust: { prices: Record<string, number> }, sizeId: string): number =>
+    crust.prices[sizeId] ?? 0;
 
 export interface ProductModalProps {
     pizza: Pizza | null;
@@ -58,8 +57,27 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
         return [{ id: 'unica', label: 'Unico', price: pizza.precio || 0 }];
     }, [pizza]);
 
+    // Build crust options dynamically from pizzasList (products with "Orilla" category)
+    const CRUST_OPTIONS = React.useMemo(() => {
+        const orillas = pizzasList.filter(p =>
+            p.categoria?.toLowerCase().includes('orilla')
+        );
+        if (orillas.length > 0) {
+            const dynamic = orillas.map(p => ({
+                id: (p.descripcion?.trim() || p.nombre.toLowerCase().replace(/[^a-z0-9]/g, '-')),
+                label: p.nombre,
+                prices: (typeof p.precios === 'object' && p.precios ? p.precios : {}) as Record<string, number>,
+            }));
+            if (!dynamic.find(c => c.id === 'normal' || c.label.toLowerCase().includes('sin'))) {
+                dynamic.unshift({ id: 'normal', label: 'Sin Orilla Rellena', prices: { chica: 0, mediana: 0, grande: 0, jumbo: 0 } });
+            }
+            return dynamic;
+        }
+        return DEFAULT_CRUST_OPTIONS;
+    }, [pizzasList]);
+
     const [selectedSize, setSelectedSize] = useState(availableSizes.find(s => s.id === 'mediana') || availableSizes[0] || SIZE_OPTIONS[2]);
-    const [selectedCrust, setSelectedCrust] = useState(CRUST_OPTIONS[0]); // Default Normal
+    const [selectedCrust, setSelectedCrust] = useState(CRUST_OPTIONS[0]); // Default Sin Orilla
 
     const isJumbo = pizza?.nombre?.toLowerCase().trim() === 'jumbo';
     const [numEspecialidades, setNumEspecialidades] = useState(1);
@@ -86,7 +104,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
         if (isOpen && availableSizes.length > 0) {
             const defaultSize = availableSizes.find(s => s.id === 'mediana') || availableSizes[0];
             setSelectedSize(defaultSize);
-            setSelectedCrust(CRUST_OPTIONS[0]);
+            setSelectedCrust(prev => CRUST_OPTIONS.find(c => c.id === prev.id) || CRUST_OPTIONS[0]);
             setNumEspecialidades(1);
             setSelectedEspecialidades([defaultEspecialidad, defaultEspecialidad, defaultEspecialidad, defaultEspecialidad]);
             setIsMitadYMitad(false);
@@ -330,7 +348,9 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                         >
                                             <h4 className="text-xs font-black text-capriccio-gold uppercase tracking-[0.2em] mb-4">¡Mejora tu pizza!</h4>
                                             <div className="space-y-3">
-                                                {CRUST_OPTIONS.map(crust => {
+                                                {CRUST_OPTIONS.filter(crust =>
+                                                    crust.id === 'normal' || getCrustPrice(crust, selectedSize?.id || 'mediana') > 0
+                                                ).map(crust => {
                                                     const crustPrice = getCrustPrice(crust, selectedSize?.id || 'mediana');
                                                     return (
                                                     <div
@@ -368,18 +388,11 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
-                            </div>
 
-                            {/* Sticky Footer */}
-                            <div className="p-6 bg-capriccio-dark border-t border-white/5 flex items-center gap-6 mt-auto">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Total a Pagar</span>
-                                    <span className="text-3xl font-black text-white italic leading-none">${finalPrice}</span>
-                                </div>
-                                {/* Selector de salsa (hamburguesas/boneless) */}
+                                {/* Selector de salsa (hamburguesas/boneless) — dentro del área scrollable */}
                                 {needsSauce && (
-                                    <div className="w-full mb-3">
-                                        <p className="text-[10px] font-black text-capriccio-gold uppercase tracking-[0.2em] mb-2">🥣 Tipo de Salsa</p>
+                                    <div>
+                                        <h4 className="text-xs font-black text-capriccio-gold uppercase tracking-[0.2em] mb-3">🥣 Tipo de Salsa</h4>
                                         <div className="grid grid-cols-3 gap-2">
                                             {SAUCE_OPTIONS.map(s => (
                                                 <button key={s} type="button" onClick={() => setSelectedSauce(s)}
@@ -393,14 +406,23 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
                                         </div>
                                     </div>
                                 )}
-                                {/* Nota adicional */}
-                                <div className="w-full mb-3">
-                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">📝 Nota adicional (opcional)</p>
+
+                                {/* Nota adicional — dentro del área scrollable */}
+                                <div>
+                                    <h4 className="text-xs font-black text-gray-500 uppercase tracking-[0.2em] mb-2">📝 Nota adicional (opcional)</h4>
                                     <input type="text" placeholder="Ej: sin cebolla, extra jalapeño..."
                                         value={notaAdicional}
                                         onChange={e => setNotaAdicional(e.target.value)}
                                         className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-xl text-white text-sm font-bold placeholder-gray-600 outline-none focus:border-capriccio-gold/50 transition-colors"
                                     />
+                                </div>
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="p-6 bg-capriccio-dark border-t border-white/5 flex items-center gap-6 mt-auto">
+                                <div className="flex flex-col shrink-0">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Total a Pagar</span>
+                                    <span className="text-3xl font-black text-white italic leading-none">${finalPrice}</span>
                                 </div>
                                 <button
                                     onClick={() => {

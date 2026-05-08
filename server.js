@@ -342,7 +342,7 @@ app.get('/api/menu/productos', async (req, res) => {
     }
 });
 
-app.post('/api/productos', adminOnly, async (req, res) => {
+app.post('/api/productos', authorize(['admin', 'responsable']), async (req, res) => {
     const { nombre, descripcion, precio, imagen, categoria, activo, precios, ingredientes } = req.body;
     try {
         const result = await db.query(
@@ -356,7 +356,7 @@ app.post('/api/productos', adminOnly, async (req, res) => {
     }
 });
 
-app.patch('/api/productos/:id', adminOnly, async (req, res) => {
+app.patch('/api/productos/:id', authorize(['admin', 'responsable']), async (req, res) => {
     const { id } = req.params;
     const raw = req.body;
     if (Object.keys(raw).length === 0) return res.sendStatus(400);
@@ -384,7 +384,7 @@ app.patch('/api/productos/:id', adminOnly, async (req, res) => {
     }
 });
 
-app.delete('/api/productos/:id', adminOnly, async (req, res) => {
+app.delete('/api/productos/:id', authorize(['admin', 'responsable']), async (req, res) => {
     try {
         await db.query('DELETE FROM productos WHERE id = $1', [req.params.id]);
         res.json({ success: true });
@@ -586,9 +586,9 @@ app.post('/api/pedidos', async (req, res) => {
 
         for (const item of validatedItems) {
             const itemRes = await connection.client.query(
-                `INSERT INTO detalle_pedidos (pedido_id, pizza_nombre, cantidad, precio_unitario, size, crust) 
-                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-                [pedidoId, item.nombre, item.quantity, item.totalItemPrice, item.size || null, item.crust || null]
+                `INSERT INTO detalle_pedidos (pedido_id, pizza_nombre, cantidad, precio_unitario, size, crust, nota, sauce)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+                [pedidoId, item.nombre, item.quantity, item.totalItemPrice, item.size || null, item.crust || null, item.nota || null, item.sauce || null]
             );
             const detailId = itemRes.rows[0].id;
 
@@ -1969,10 +1969,10 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
         for (const item of items) {
             const detalleResult = await db.query(
                 `INSERT INTO detalle_pedidos
-                 (pedido_id, pizza_nombre, cantidad, precio_unitario, size, crust)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                 (pedido_id, pizza_nombre, cantidad, precio_unitario, size, crust, nota, sauce)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                  RETURNING id`,
-                [pedido_id, item.pizza_nombre, item.cantidad, item.precio_unitario || 0, item.size || null, item.crust || null]
+                [pedido_id, item.pizza_nombre, item.cantidad, item.precio_unitario || 0, item.size || null, item.crust || null, item.nota || null, item.sauce || null]
             );
 
             // Agregar extras si existen
@@ -2026,7 +2026,9 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
                 totalItemPrice: i.precio_unitario,
                 size: i.size || null,
                 crust: i.crust || null,
-                extras: i.extras || []
+                extras: i.extras || [],
+                nota: i.nota || null,
+                sauce: i.sauce || null,
             })),
             created_at: new Date().toISOString()
         });

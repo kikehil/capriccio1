@@ -18,6 +18,7 @@ const PIZZA_SIZES = [
     { key: 'chica',   label: 'Chica' },
     { key: 'mediana', label: 'Mediana' },
     { key: 'grande',  label: 'Grande' },
+    { key: 'jumbo',   label: 'Jumbo' },
 ];
 
 const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onRefresh }) => {
@@ -38,12 +39,12 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
         imagen: '',
         categoria: '🍕 Pizzas',
         activo: true,
-        precios: { mini: '', chica: '', mediana: '', grande: '' } as Record<string, string>,
+        precios: { mini: '', chica: '', mediana: '', grande: '', jumbo: '' } as Record<string, string>,
         ingredientes: [] as string[],
     });
     const [ingredienteInput, setIngredienteInput] = useState('');
 
-    const hasSizes = formData.categoria === '🍕 Pizzas';
+    const hasSizes = formData.categoria === '🍕 Pizzas' || formData.categoria.toLowerCase().includes('orilla');
 
     const categories = ['all', ...Array.from(new Set(products.map(p => p.categoria)))];
 
@@ -64,7 +65,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
             imagen: '',
             categoria: '🍕 Pizzas',
             activo: true,
-            precios: { mini: '', chica: '', mediana: '', grande: '' },
+            precios: { mini: '', chica: '', mediana: '', grande: '', jumbo: '' },
             ingredientes: [],
         });
         setIsModalOpen(true);
@@ -73,7 +74,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
     const openEditModal = (product: Pizza) => {
         setEditingProduct(product);
         // Parse precios — can be a JSON string or an object
-        let preciosObj: Record<string, string> = { mini: '', chica: '', mediana: '', grande: '' };
+        let preciosObj: Record<string, string> = { mini: '', chica: '', mediana: '', grande: '', jumbo: '' };
         if (product.precios) {
             const raw = typeof product.precios === 'string' ? JSON.parse(product.precios) : product.precios;
             preciosObj = {
@@ -81,6 +82,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                 chica:   raw.chica   != null ? String(raw.chica)   : '',
                 mediana: raw.mediana != null ? String(raw.mediana) : '',
                 grande:  raw.grande  != null ? String(raw.grande)  : '',
+                jumbo:   raw.jumbo   != null ? String(raw.jumbo)   : '',
             };
         }
         // Parse ingredientes

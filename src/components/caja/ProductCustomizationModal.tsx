@@ -82,15 +82,11 @@ const SIZE_PRICES: Record<string, number> = {
   grande: 1.3,
 };
 
-const CRUST_OPTIONS = [
+const DEFAULT_CRUST_OPTIONS = [
   { id: 'sin-orilla',   nombre: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
   { id: 'orilla-queso', nombre: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
-  { id: 'dedos-queso',  nombre: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 50 } },
+  { id: 'dedos-queso',  nombre: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 65 } },
 ];
-const getCrustPrice = (crustId: string, sizeId: string): number => {
-  const crust = CRUST_OPTIONS.find(c => c.id === crustId);
-  return crust?.prices[sizeId as keyof typeof crust.prices] ?? 0;
-};
 
 const PROMO_SIZES = [
   { id: '2_medianas', label: '2 Medianas', price: 245 },
@@ -157,7 +153,14 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const [promoSize, setPromoSize] = useState(PROMO_SIZES[0]);
   const [promoPizza1, setPromoPizza1] = useState<Pizza | null>(null);
   const [promoPizza2, setPromoPizza2] = useState<Pizza | null>(null);
-  const [promoCrust, setPromoCrust] = useState(CRUST_OPTIONS[0]);
+  // Dynamic crust options loaded from DB (falls back to defaults)
+  const [crustOptions, setCrustOptions] = useState(DEFAULT_CRUST_OPTIONS);
+  const getCrustPrice = (crustId: string, sizeId: string): number => {
+    const crust = crustOptions.find(c => c.id === crustId);
+    return crust?.prices[sizeId as keyof typeof crust.prices] ?? 0;
+  };
+
+  const [promoCrust, setPromoCrust] = useState(DEFAULT_CRUST_OPTIONS[0]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -166,15 +169,37 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
         if (!response.ok) throw new Error('Error al cargar productos');
         const data = await response.json();
 
-        const filtered = data
+        const allParsed = data
           .filter((p: any) => p.activo === 1 || p.activo === true)
           .map((p: any) => ({
             ...p,
-            precios: typeof p.precios === 'string' ? JSON.parse(p.precios) : p.precios,
+            precios: typeof p.precios === 'string' ? (() => { try { return JSON.parse(p.precios); } catch { return {}; } })() : (p.precios || {}),
             ingredientes: typeof p.ingredientes === 'string'
               ? (() => { try { return JSON.parse(p.ingredientes); } catch { return []; } })()
               : (Array.isArray(p.ingredientes) ? p.ingredientes : []),
           }));
+
+        // Extract crust options from products with "Orilla" in category
+        const orillasFromDB = allParsed.filter((p: any) =>
+          p.categoria?.toLowerCase().includes('orilla')
+        );
+        if (orillasFromDB.length > 0) {
+          const dynamicCrusts = orillasFromDB.map((p: any) => ({
+            id: (p.descripcion?.trim() || p.nombre.toLowerCase().replace(/[^a-z0-9]/g, '-')),
+            nombre: p.nombre,
+            prices: p.precios as Record<string, number>,
+          }));
+          // Ensure "sin-orilla" is always first
+          if (!dynamicCrusts.find((c: any) => c.id === 'sin-orilla' || c.nombre.toLowerCase().includes('sin'))) {
+            dynamicCrusts.unshift({ id: 'sin-orilla', nombre: 'Sin Orilla Rellena', prices: { chica: 0, mediana: 0, grande: 0, jumbo: 0 } });
+          }
+          setCrustOptions(dynamicCrusts);
+        }
+
+        // Only show non-crust products in the main selector
+        const filtered = allParsed.filter((p: any) =>
+          !p.categoria?.toLowerCase().includes('orilla')
+        );
 
         setProducts(filtered);
 
@@ -230,8 +255,10 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     if (!selectedProduct) return 0;
 
     if (isJumbo) {
-      // JUMBO: flat price regardless of specialties count
-      return selectedProduct.precios?.jumbo || selectedProduct.precio;
+      // JUMBO: base price + crust price
+      const jumboBase = selectedProduct.precios?.jumbo || selectedProduct.precio;
+      const crustPrice = getCrustPrice(options.crust, 'jumbo');
+      return (jumboBase + crustPrice) * options.cantidad;
     }
 
     const basePrice = getProductPrice(selectedProduct, options.size);
@@ -297,17 +324,21 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
 
     if (isJumbo) {
       const activeEsp = selectedEspecialidades.slice(0, numEspecialidades).filter(Boolean);
+      const crustText = options.crust !== 'sin-orilla'
+        ? ` + ${crustOptions.find(c => c.id === options.crust)?.nombre}`
+        : '';
       displayName = activeEsp.length > 0
-        ? `Jumbo (${numEspecialidades} Esp: ${activeEsp.join(', ')})`
-        : 'Jumbo';
-      finalPrice = selectedProduct.precios?.jumbo || selectedProduct.precio;
+        ? `Jumbo (${numEspecialidades} Esp: ${activeEsp.join(', ')})${crustText}`
+        : `Jumbo${crustText}`;
+      const jumboBase = selectedProduct.precios?.jumbo || selectedProduct.precio;
+      finalPrice = jumboBase + getCrustPrice(options.crust, 'jumbo');
     } else if (isMitadYMitad && segundaMitad && canHalfAndHalf) {
       const baseP = getProductPrice(selectedProduct, options.size);
       const segundaP = getProductPrice(segundaMitad, options.size);
       const crustP = getCrustPrice(options.crust, options.size);
       finalPrice = Math.max(baseP, segundaP) + crustP;
       const crustText = options.crust !== 'sin-orilla'
-        ? ` + ${CRUST_OPTIONS.find(c => c.id === options.crust)?.nombre}`
+        ? ` + ${crustOptions.find(c => c.id === options.crust)?.nombre}`
         : '';
       displayName = `${selectedProduct.nombre} + ${segundaMitad.nombre} (${options.size} - Mitad y Mitad)${crustText}`;
     } else {
@@ -315,7 +346,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
       finalPrice = getProductPrice(selectedProduct, options.size) + crustP;
       const sizeText = options.size ? ` (${options.size})` : '';
       const crustText = options.crust !== 'sin-orilla'
-        ? ` + ${CRUST_OPTIONS.find(c => c.id === options.crust)?.nombre}`
+        ? ` + ${crustOptions.find(c => c.id === options.crust)?.nombre}`
         : '';
       displayName = `${selectedProduct.nombre}${sizeText}${crustText}`;
     }
@@ -479,7 +510,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
             <div>
               <h3 className="font-bold text-gray-800 mb-3">4. Orilla Rellena (opcional)</h3>
               <div className="space-y-2">
-                {CRUST_OPTIONS.map(crust => {
+                {crustOptions.map(crust => {
                   const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
                   const crustP = getCrustPrice(crust.id, promoSizeId);
                   return (
@@ -933,11 +964,11 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
           )}
 
           {/* ORILLA (si aplica) */}
-          {showCrustOptions && !isJumbo && (
+          {showCrustOptions && (
             <div>
               <h3 className="font-bold text-gray-800 mb-3">Orilla Rellena</h3>
               <div className="space-y-2">
-                {CRUST_OPTIONS
+                {crustOptions
                   // Para cada tamaño solo mostrar opciones disponibles:
                   // sin-orilla siempre, las de pago solo si tienen precio > 0 para ese tamaño
                   .filter(crust => crust.id === 'sin-orilla' || getCrustPrice(crust.id, options.size) > 0)
