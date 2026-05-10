@@ -784,10 +784,13 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   }
 
   // ─── STEP 3: CUSTOMIZE ───────────────────────────────────────────────────────
+  // Effective size for crust pricing: Jumbo always uses 'jumbo' key
+  const effectiveSizeForCrust = isJumbo ? 'jumbo' : options.size;
+
   const showCrustOptions =
     selectedProduct &&
     isPizzaProduct(selectedProduct) &&
-    (options.size === 'chica' || options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
+    (isJumbo || options.size === 'chica' || options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -971,9 +974,9 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                 {crustOptions
                   // Para cada tamaño solo mostrar opciones disponibles:
                   // sin-orilla siempre, las de pago solo si tienen precio > 0 para ese tamaño
-                  .filter(crust => crust.id === 'sin-orilla' || getCrustPrice(crust.id, options.size) > 0)
+                  .filter(crust => crust.id === 'sin-orilla' || getCrustPrice(crust.id, effectiveSizeForCrust) > 0)
                   .map(crust => {
-                    const crustPrecio = getCrustPrice(crust.id, options.size);
+                    const crustPrecio = getCrustPrice(crust.id, effectiveSizeForCrust);
                     return (
                       <label
                         key={crust.id}

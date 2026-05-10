@@ -343,7 +343,7 @@ export default function Home() {
 return (
   <div className="bg-[#fafafa] min-h-screen selection:bg-yellow-200">
     <BrandHeader />
-    <InvitaModal onAuthSuccess={() => window.location.reload()} />
+    {/* <InvitaModal onAuthSuccess={() => window.location.reload()} /> */}
     {/* Dynamic Header / Hero */}
     <section className="relative h-[85vh] flex items-center justify-center overflow-hidden bg-black">
       <div className="absolute inset-0 z-0">

@@ -177,6 +177,12 @@ app.post('/api/auth/login', async (req, res) => {
                 'SELECT u.*, n.nombre as negocio_nombre, n.plan FROM usuarios u LEFT JOIN negocios n ON u.negocio_id = n.id WHERE LOWER(u.username) = LOWER($1) AND u.role IN (\'admin\',\'caja\',\'responsable\',\'marketing\') AND u.activo = 1',
                 [username]
             );
+        } else if (role_request === 'caja') {
+            // POS acepta caja + admin + responsable
+            result = await db.query(
+                `SELECT u.*, n.nombre as negocio_nombre, n.plan FROM usuarios u LEFT JOIN negocios n ON u.negocio_id = n.id WHERE LOWER(u.username) = LOWER($1) AND u.role IN ('caja','admin','responsable') AND u.activo = 1`,
+                [username]
+            );
         } else {
             result = await db.query(
                 'SELECT u.*, n.nombre as negocio_nombre, n.plan FROM usuarios u LEFT JOIN negocios n ON u.negocio_id = n.id WHERE LOWER(u.username) = LOWER($1) AND u.role = $2 AND u.activo = 1',
@@ -554,10 +560,25 @@ app.post('/api/pedidos', async (req, res) => {
                 const product = catalog.find(p => p.nombre.toLowerCase() === item.nombre.toLowerCase());
                 if (product) {
                     const prices = typeof product.precios === 'string' ? JSON.parse(product.precios) : product.precios;
-                    if (item.size && prices && prices[item.size.toLowerCase()]) {
+                    // Extract base size key: "Grande (Mitad X, Mitad Y)" → "grande", "Jumbo (2 Esp: ...)" → "jumbo"
+                    const baseSizeKey = item.size ? item.size.toLowerCase().split(/[\s(]/)[0] : null;
+                    if (baseSizeKey && prices && prices[baseSizeKey]) {
+                        unitPrice = prices[baseSizeKey];
+                    } else if (item.size && prices && prices[item.size.toLowerCase()]) {
                         unitPrice = prices[item.size.toLowerCase()];
                     } else {
                         unitPrice = product.precio || 0;
+                    }
+
+                    // Add crust (orilla) price if present
+                    if (item.crust) {
+                        const crustProduct = catalog.find(p => p.nombre.toLowerCase() === item.crust.toLowerCase());
+                        if (crustProduct) {
+                            const crustPrices = typeof crustProduct.precios === 'string' ? JSON.parse(crustProduct.precios) : crustProduct.precios;
+                            if (baseSizeKey && crustPrices && crustPrices[baseSizeKey]) {
+                                unitPrice += crustPrices[baseSizeKey];
+                            }
+                        }
                     }
 
                     // Add extras cost if any

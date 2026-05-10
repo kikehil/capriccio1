@@ -402,9 +402,16 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                             className="w-full p-4 bg-slate-50 rounded-2xl border-none text-slate-900 font-bold focus:ring-2 focus:ring-capriccio-gold outline-none"
                                         >
                                             <option value="🍕 Pizzas">🍕 Pizzas</option>
+                                            <option value="🥖 Orillas">🥖 Orillas</option>
                                             <option value="🍔 Hamburguesas">🍔 Hamburguesas</option>
+                                            <option value="🍟 Snacks">🍟 Snacks</option>
                                             <option value="Snacks & Más">Snacks & Más</option>
                                             <option value="🥤 Bebidas">🥤 Bebidas</option>
+                                            <option value="🍰 Postres">🍰 Postres</option>
+                                            <option value="🥗 Entradas">🥗 Entradas</option>
+                                            <option value="🍗 Alitas">🍗 Alitas</option>
+                                            <option value="⭐ Especiales">⭐ Especiales</option>
+                                            <option value="📦 Otros">📦 Otros</option>
                                         </select>
                                     </div>
 

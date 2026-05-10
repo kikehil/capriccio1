@@ -16,7 +16,7 @@ export default function CajaPage() {
     const token = localStorage.getItem('capriccio_token_caja');
     const role = localStorage.getItem('capriccio_user_role');
 
-    if (token && role === 'caja') {
+    if (token && (role === 'caja' || role === 'admin' || role === 'responsable')) {
       setIsAuthenticated(true);
       fetchActiveTurno(token);
     } else {
