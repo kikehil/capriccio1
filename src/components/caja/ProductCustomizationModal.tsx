@@ -77,15 +77,16 @@ interface ProductCustomizationModalProps {
 
 const SIZES = ['chica', 'mediana', 'grande'];
 const SIZE_PRICES: Record<string, number> = {
+  mini: 0.65,
   chica: 0.85,
   mediana: 1,
   grande: 1.3,
 };
 
 const DEFAULT_CRUST_OPTIONS = [
-  { id: 'sin-orilla',   nombre: 'Sin Orilla Rellena',         prices: { chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
-  { id: 'orilla-queso', nombre: '🧀 Orilla Rellena de Queso', prices: { chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
-  { id: 'dedos-queso',  nombre: '🥖 Orilla Dedos de Queso',   prices: { chica: 0,  mediana: 35, grande: 45, jumbo: 65 } },
+  { id: 'sin-orilla',   nombre: 'Sin Orilla Rellena',         prices: { mini: 0,  chica: 0,  mediana: 0,  grande: 0,  jumbo: 0  } },
+  { id: 'orilla-queso', nombre: '🧀 Orilla Rellena de Queso', prices: { mini: 10, chica: 10, mediana: 25, grande: 35, jumbo: 50 } },
+  { id: 'dedos-queso',  nombre: '🥖 Orilla Dedos de Queso',   prices: { mini: 0,  chica: 0,  mediana: 35, grande: 45, jumbo: 65 } },
 ];
 
 const PROMO_SIZES = [
@@ -191,7 +192,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
           }));
           // Ensure "sin-orilla" is always first
           if (!dynamicCrusts.find((c: any) => c.id === 'sin-orilla' || c.nombre.toLowerCase().includes('sin'))) {
-            dynamicCrusts.unshift({ id: 'sin-orilla', nombre: 'Sin Orilla Rellena', prices: { chica: 0, mediana: 0, grande: 0, jumbo: 0 } });
+            dynamicCrusts.unshift({ id: 'sin-orilla', nombre: 'Sin Orilla Rellena', prices: { mini: 0, chica: 0, mediana: 0, grande: 0, jumbo: 0 } });
           }
           setCrustOptions(dynamicCrusts);
         }
@@ -236,10 +237,12 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const isPizzaProduct = (pizza: Pizza) => pizza.categoria.toLowerCase().includes('pizza');
   const isJumbo = selectedProduct?.nombre?.toLowerCase().trim() === 'jumbo';
 
-  // Available sizes for selected product (add jumbo if product has jumbo price)
+  // Available sizes for selected product (prepend mini if product has mini price, append jumbo if has jumbo price)
   const availableSizes = React.useMemo(() => {
     if (!selectedProduct) return SIZES;
-    const sizes = [...SIZES];
+    const sizes: string[] = [];
+    if (selectedProduct.precios?.mini) sizes.push('mini');
+    sizes.push(...SIZES);
     if (selectedProduct.precios?.jumbo) sizes.push('jumbo');
     return sizes;
   }, [selectedProduct]);
@@ -790,7 +793,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const showCrustOptions =
     selectedProduct &&
     isPizzaProduct(selectedProduct) &&
-    (isJumbo || options.size === 'chica' || options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
+    (isJumbo || options.size === 'mini' || options.size === 'chica' || options.size === 'mediana' || options.size === 'grande' || options.size === 'jumbo');
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
