@@ -466,7 +466,7 @@ app.get('/api/pedidos', staffOnly, async (req, res) => {
         
         const result = await db.query(`${baseQuery} ORDER BY created_at DESC LIMIT 100`, params);
         const pedidosConItems = await Promise.all(result.rows.map(async (pedido) => {
-            const itemsRes = await db.query('SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity, d.precio_unitario as "totalItemPrice", d.size, d.crust FROM detalle_pedidos d WHERE d.pedido_id = $1', [pedido.id]);
+            const itemsRes = await db.query('SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity, d.precio_unitario as "totalItemPrice", d.size, d.crust, d.nota, d.sauce FROM detalle_pedidos d WHERE d.pedido_id = $1', [pedido.id]);
             for (let item of itemsRes.rows) {
                 const ext = await db.query('SELECT extra_nombre as nombre, precio_extra as precio FROM extras_pedidos WHERE detalle_id = $1', [item.id]);
                 item.extras = ext.rows || [];
@@ -841,7 +841,7 @@ app.patch('/api/pedidos/:id/status', staffOnly, async (req, res) => {
         if (status === 'listo' || status === 'en_reparto') {
             // Incluir items y extras para que el repartidor vea el detalle en tiempo real
             const itemsRes = await db.query(
-                'SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity, d.precio_unitario as "totalItemPrice", d.size, d.crust FROM detalle_pedidos d WHERE d.pedido_id = $1',
+                'SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity, d.precio_unitario as "totalItemPrice", d.size, d.crust, d.nota, d.sauce FROM detalle_pedidos d WHERE d.pedido_id = $1',
                 [pedido.id]
             );
             for (const item of itemsRes.rows) {
@@ -2162,7 +2162,7 @@ app.get('/api/caja/pedidos/turno/:turno_id', authorize(['admin', 'caja', 'respon
         // Incluir items de cada pedido
         const pedidosConItems = await Promise.all(result.rows.map(async (pedido) => {
             const itemsRes = await db.query(
-                'SELECT pizza_nombre as nombre, cantidad as quantity, precio_unitario, size, crust FROM detalle_pedidos WHERE pedido_id = $1',
+                'SELECT pizza_nombre as nombre, cantidad as quantity, precio_unitario, size, crust, nota, sauce FROM detalle_pedidos WHERE pedido_id = $1',
                 [pedido.id]
             );
             return { ...pedido, items: itemsRes.rows };

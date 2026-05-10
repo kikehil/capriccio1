@@ -110,6 +110,20 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onComplete, onCompleteInSt
                                 ))}
                             </div>
                         )}
+
+                        {(item as any).sauce && (
+                            <p className="text-sm font-bold text-blue-600 uppercase italic mt-1">
+                                🥣 Salsa: {(item as any).sauce}
+                            </p>
+                        )}
+
+                        {(item as any).nota && (
+                            <div className="mt-2 bg-yellow-50 border border-yellow-300 rounded-xl px-3 py-2">
+                                <p className="text-sm font-black text-yellow-800 uppercase tracking-wide">
+                                    📝 {(item as any).nota}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

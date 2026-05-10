@@ -243,13 +243,25 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
                 {order.items && order.items.length > 0 && (
                   <div className="px-4 py-3 bg-slate-50/60 border-b border-slate-50 space-y-1">
                     {order.items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-[11px]">
-                        <span className="font-black text-slate-700 uppercase italic">
-                          <span className="text-amber-600 mr-1">{item.quantity}×</span>
-                          {item.nombre}
-                          {item.size && <span className="text-slate-400 font-normal ml-1">({item.size})</span>}
-                        </span>
-                        <span className="font-bold text-slate-500">${((item.precio_unitario || 0) * item.quantity).toFixed(0)}</span>
+                      <div key={idx} className="text-[11px] space-y-0.5">
+                        <div className="flex justify-between items-center">
+                          <span className="font-black text-slate-700 uppercase italic">
+                            <span className="text-amber-600 mr-1">{item.quantity}×</span>
+                            {item.nombre}
+                            {item.size && <span className="text-slate-400 font-normal ml-1">({item.size})</span>}
+                          </span>
+                          <span className="font-bold text-slate-500">${((item.precio_unitario || 0) * item.quantity).toFixed(0)}</span>
+                        </div>
+                        {(item as any).nota && (
+                          <p className="text-[10px] font-black text-yellow-700 bg-yellow-50 rounded px-2 py-0.5 uppercase">
+                            📝 {(item as any).nota}
+                          </p>
+                        )}
+                        {(item as any).sauce && (
+                          <p className="text-[10px] font-semibold text-blue-600 italic pl-1">
+                            🥣 {(item as any).sauce}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
