@@ -455,15 +455,15 @@ app.delete('/api/promos/:id', adminOnly, async (req, res) => {
 // --- API PEDIDOS ---
 app.get('/api/pedidos', staffOnly, async (req, res) => {
     try {
-        let baseQuery = "SELECT * FROM pedidos";
+        let baseQuery = "SELECT * FROM pedidos WHERE (archivado IS NOT TRUE)";
         let params = [];
-        
+
         // Seguridad: Si el usuario es repartidor, solo mostramos pedidos recolectados por él
         // o pedidos listos para ser tomados por cualquiera.
         if (req.user.role === 'repartidor') {
-            baseQuery += " WHERE status IN ('listo', 'en_reparto', 'en_camino', 'entregado')";
+            baseQuery += " AND status IN ('listo', 'en_reparto', 'en_camino', 'entregado')";
         }
-        
+
         const result = await db.query(`${baseQuery} ORDER BY created_at DESC LIMIT 100`, params);
         const pedidosConItems = await Promise.all(result.rows.map(async (pedido) => {
             const itemsRes = await db.query('SELECT d.id, d.pizza_nombre as nombre, d.cantidad as quantity, d.precio_unitario as "totalItemPrice", d.size, d.crust, d.nota, d.sauce FROM detalle_pedidos d WHERE d.pedido_id = $1', [pedido.id]);
@@ -918,7 +918,7 @@ app.patch('/api/pedidos/:id/status', staffOnly, async (req, res) => {
 
 app.get('/api/pedidos/status/:status', staffOnly, async (req, res) => {
     try {
-        const result = await db.query('SELECT * FROM pedidos WHERE status = $1 ORDER BY created_at DESC', [req.params.status]);
+        const result = await db.query('SELECT * FROM pedidos WHERE status = $1 AND (archivado IS NOT TRUE) ORDER BY created_at DESC', [req.params.status]);
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -962,7 +962,7 @@ app.get('/api/admin/stats', adminPanelAccess, async (req, res) => {
         }
         const liquidatedRes = await db.query(`SELECT SUM(total) as total FROM pedidos ${liqQuery}`, params);
         
-        const recentRes = await db.query("SELECT * FROM pedidos ORDER BY created_at DESC LIMIT 10");
+        const recentRes = await db.query("SELECT * FROM pedidos WHERE (archivado IS NOT TRUE) ORDER BY created_at DESC LIMIT 10");
         const recentOrdersWithItems = await Promise.all(recentRes.rows.map(async (p) => {
             const items = await db.query(
                 'SELECT d.*, d.pizza_nombre as nombre, d.cantidad as quantity FROM detalle_pedidos d WHERE d.pedido_id = $1',
@@ -1206,7 +1206,7 @@ app.patch('/api/admin/liquidar-pedidos', adminOnly, async (req, res) => {
 
 app.get('/api/admin/corte-caja', adminOnly, async (req, res) => {
     try {
-        const rows = await db.query("SELECT * FROM pedidos WHERE (status = 'entregado' OR status = 'despachado' OR status = 'listo') AND liquidado = 0");
+        const rows = await db.query("SELECT * FROM pedidos WHERE (status = 'entregado' OR status = 'despachado' OR status = 'listo') AND liquidado = 0 AND (archivado IS NOT TRUE)");
         const aggs = {};
         rows.rows.forEach(r => {
             let key = r.repartidor || 'Sin Asignar';
