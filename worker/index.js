@@ -2,6 +2,15 @@
 // Este archivo es el custom worker source para @ducanh2912/next-pwa.
 // Se compila y se INYECTA en el service worker generado (sw.js).
 
+// ─── LIMPIAR CACHÉS VIEJOS AL ACTIVAR ────────────────────────────────────────
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((names) =>
+            Promise.all(names.map((name) => caches.delete(name)))
+        ).then(() => self.clients.claim())
+    );
+});
+
 self.addEventListener('push', (event) => {
     if (!event.data) return;
 

@@ -1,6 +1,16 @@
 // Service Worker personalizado de Capriccio Pizzería
 // Este archivo extiende el SW generado por next-pwa (Workbox)
 
+// ─── FORZAR ACTUALIZACIÓN AL ACTIVAR ─────────────────────────────────────────
+// Limpia todos los cachés viejos cuando se activa un nuevo SW
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((cacheNames) =>
+            Promise.all(cacheNames.map((name) => caches.delete(name)))
+        ).then(() => self.clients.claim())
+    );
+});
+
 // ─── PUSH NOTIFICATIONS ──────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
     if (!event.data) return;
