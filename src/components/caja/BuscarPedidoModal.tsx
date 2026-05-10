@@ -98,25 +98,25 @@ function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): str
   <style>
     @page { margin: 3mm; size: 80mm auto; }
     * { box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 11px; width: 72mm; margin: 0 auto; color: #000; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 13px; width: 72mm; margin: 0 auto; color: #000; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .big { font-size: 14px; }
-    .copy-label { text-align: center; border: 2px solid #000; padding: 2px 6px; font-size: 10px; font-weight: bold; margin-bottom: 4px; display: inline-block; }
+    .big { font-size: 16px; }
+    .copy-label { text-align: center; border: 2px solid #000; padding: 2px 6px; font-size: 12px; font-weight: bold; margin-bottom: 4px; display: inline-block; }
     hr { border: none; border-top: 1px dashed #000; margin: 5px 0; }
     table { width: 100%; border-collapse: collapse; }
     td { padding: 1px 0; vertical-align: top; }
     .section-title { font-weight: bold; border-bottom: 1px solid #000; margin-top: 5px; margin-bottom: 3px; }
-    .reprint-notice { text-align: center; font-size: 9px; color: #555; }
+    .reprint-notice { text-align: center; font-size: 11px; color: #555; }
   </style>
 </head>
 <body>
   <div class="center bold big">CAPRICCIO PIZZERÍA</div>
-  <div class="center" style="font-size:9px;">Pánuco, Ver.</div>
+  <div class="center" style="font-size:11px;">Pánuco, Ver.</div>
   <hr>
   <div class="center"><span class="copy-label">COPIA: ${copy} — REIMPRESIÓN</span></div>
-  <div class="center bold" style="font-size:13px;">ORDEN #${shortId}</div>
-  <div class="center" style="font-size:9px;">${fecha}</div>
+  <div class="center bold" style="font-size:15px;">ORDEN #${shortId}</div>
+  <div class="center" style="font-size:11px;">${fecha}</div>
   <hr>
 
   <div class="section-title">CLIENTE</div>
@@ -138,7 +138,7 @@ function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): str
   <hr>
   <div class="reprint-notice">*** REIMPRESIÓN ***</div>
   <div class="center bold" style="margin-top:6px;">¡GRACIAS POR SU PREFERENCIA!</div>
-  <div class="center" style="font-size:9px;">capricciopizzeria.com</div>
+  <div class="center" style="font-size:11px;">capricciopizzeria.com</div>
   <br><br><br>
 </body>
 </html>`;

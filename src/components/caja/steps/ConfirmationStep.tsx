@@ -106,19 +106,19 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
     * { box-sizing: border-box; }
     body {
       font-family: 'Courier New', Courier, monospace;
-      font-size: 11px;
+      font-size: 13px;
       width: 72mm;
       margin: 0 auto;
       color: #000;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .big { font-size: 14px; }
+    .big { font-size: 16px; }
     .copy-label {
       text-align: center;
       border: 2px solid #000;
       padding: 2px 6px;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: bold;
       margin-bottom: 4px;
       display: inline-block;
@@ -131,11 +131,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 </head>
 <body>
   <div class="center bold big">CAPRICCIO PIZZERÍA</div>
-  <div class="center" style="font-size:9px;">Pánuco, Ver.</div>
+  <div class="center" style="font-size:11px;">Pánuco, Ver.</div>
   <hr>
   <div class="center"><span class="copy-label">COPIA: ${copy}</span></div>
-  <div class="center bold" style="font-size:13px;">ORDEN #${shortId}</div>
-  <div class="center" style="font-size:9px;">${new Date().toLocaleString('es-MX')}</div>
+  <div class="center bold" style="font-size:15px;">ORDEN #${shortId}</div>
+  <div class="center" style="font-size:11px;">${new Date().toLocaleString('es-MX')}</div>
   <hr>
 
   <div class="section-title">CLIENTE</div>
@@ -156,7 +156,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 
   <hr>
   <div class="center bold" style="margin-top:6px;">¡GRACIAS POR SU PREFERENCIA!</div>
-  <div class="center" style="font-size:9px;">capricciopizzeria.com</div>
+  <div class="center" style="font-size:11px;">capricciopizzeria.com</div>
   <br><br><br>
 </body>
 </html>`;
