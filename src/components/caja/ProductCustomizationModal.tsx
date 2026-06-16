@@ -116,7 +116,7 @@ const getCategoryIcon = (categoria: string): string => {
   return '🍽️';
 };
 
-type Step = 'category-select' | 'product-select' | 'customize' | 'extras' | 'promo';
+type Step = 'category-select' | 'product-select' | 'customize' | 'extras' | 'promo' | 'promo-mes';
 
 const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   selectedProductId,
@@ -133,6 +133,10 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   });
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<Step>('category-select');
+
+  // Promo del mes state
+  const [selectedIngredient, setSelectedIngredient] = useState('peperoni');
+  const [promoMesCantidad, setPromoMesCantidad] = useState(1);
 
   // Mitad y mitad state
   const [isMitadYMitad, setIsMitadYMitad] = useState(false);
@@ -161,7 +165,8 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
     return crust?.prices[sizeId as keyof typeof crust.prices] ?? 0;
   };
 
-  const [promoCrust, setPromoCrust] = useState(DEFAULT_CRUST_OPTIONS[0]);
+  const [promoCrust1, setPromoCrust1] = useState(DEFAULT_CRUST_OPTIONS[0]);
+  const [promoCrust2, setPromoCrust2] = useState(DEFAULT_CRUST_OPTIONS[0]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -345,18 +350,20 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
         : '';
       displayName = `${selectedProduct.nombre} + ${segundaMitad.nombre} (${options.size} - Mitad y Mitad)${crustText}`;
     } else {
-      const crustP = getCrustPrice(options.crust, options.size);
+      const isPizza = isPizzaProduct(selectedProduct);
+      const crustP = isPizza ? getCrustPrice(options.crust, options.size) : 0;
       finalPrice = getProductPrice(selectedProduct, options.size) + crustP;
-      const sizeText = options.size ? ` (${options.size})` : '';
-      const crustText = options.crust !== 'sin-orilla'
+      const sizeText = (isPizza && options.size) ? ` (${options.size})` : '';
+      const crustText = (isPizza && options.crust !== 'sin-orilla')
         ? ` + ${crustOptions.find(c => c.id === options.crust)?.nombre}`
         : '';
       displayName = `${selectedProduct.nombre}${sizeText}${crustText}`;
     }
 
+    const isPizza = isPizzaProduct(selectedProduct);
     onAdd(selectedProduct, {
-      size: options.size,
-      crust: options.crust,
+      size: isPizza ? options.size : undefined,
+      crust: isPizza ? options.crust : undefined,
       extras: extrasFlat,
       cantidad: options.cantidad,
       finalPrice: finalPrice + extrasTotal,
@@ -372,16 +379,20 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
 
     // Determinar tamaño base para la promo (medianas o grandes)
     const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
-    const crustPrice = getCrustPrice(promoCrust.id, promoSizeId);
-    const finalPromoPrice = promoSize.price + crustPrice;
+    const crust1Price = getCrustPrice(promoCrust1.id, promoSizeId);
+    const crust2Price = getCrustPrice(promoCrust2.id, promoSizeId);
+    const finalPromoPrice = promoSize.price + crust1Price + crust2Price;
 
-    const crustText = promoCrust.id !== 'sin-orilla' ? ` + ${promoCrust.nombre}` : '';
-    const displayName = `Combo ${promoSize.label}: ${promoPizza1.nombre} + ${promoPizza2.nombre}${crustText}`;
+    const cleanCrustName = (name: string) => name.replace(/^[^\w\s]+/g, '').trim();
+
+    const pizza1CrustText = promoCrust1.id !== 'sin-orilla' ? ` (${cleanCrustName(promoCrust1.nombre)})` : '';
+    const pizza2CrustText = promoCrust2.id !== 'sin-orilla' ? ` (${cleanCrustName(promoCrust2.nombre)})` : '';
+    const displayName = `Combo ${promoSize.label}: ${promoPizza1.nombre}${pizza1CrustText} + ${promoPizza2.nombre}${pizza2CrustText}`;
 
     const virtualPizza: Pizza = {
       id: 0,
       nombre: `Combo Promo: ${promoSize.label}`,
-      descripcion: `${promoPizza1.nombre} + ${promoPizza2.nombre}`,
+      descripcion: `${promoPizza1.nombre}${pizza1CrustText} + ${promoPizza2.nombre}${pizza2CrustText}`,
       precio: finalPromoPrice,
       imagen: '',
       categoria: 'Promo',
@@ -390,7 +401,7 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
 
     onAdd(virtualPizza, {
       size: promoSize.label,
-      crust: promoCrust.id,
+      crust: undefined,
       extras: [],
       cantidad: 1,
       finalPrice: finalPromoPrice,
@@ -412,6 +423,123 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
   const categories = Array.from(new Set(products.map(p => p.categoria))).sort((a, b) =>
     a.localeCompare(b, 'es')
   );
+
+  // ─── STEP: PROMO MES ────────────────────────────────────────────────────────
+  if (step === 'promo-mes') {
+    const INGREDIENTS_PROMO = ['peperoni', 'salami', 'chorizo', 'piña', 'tocino', 'salchicha'];
+    const total = 138 * promoMesCantidad;
+
+    const handleAddPromoMes = () => {
+      const virtualPizza: Pizza = {
+        id: 9999, // Virtual ID
+        nombre: `Promo del Mes (1 Ing: ${selectedIngredient.toUpperCase()})`,
+        descripcion: `1 pizza grande con ${selectedIngredient}`,
+        precio: 138,
+        imagen: '',
+        categoria: 'Promo',
+        activo: true,
+      };
+
+      onAdd(virtualPizza, {
+        size: 'grande',
+        crust: 'sin-orilla',
+        extras: [],
+        cantidad: promoMesCantidad,
+        finalPrice: 138,
+        displayName: `Promo del Mes: Pizza Grande (${selectedIngredient.toUpperCase()})`,
+      });
+      onClose();
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-1 sm:p-4">
+        <div className="bg-white rounded-lg sm:rounded-xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b p-3 sm:p-5 flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => setStep('category-select')}
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition text-gray-600 flex-shrink-0"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div className="flex-1">
+              <h2 className="text-base sm:text-2xl font-bold text-gray-900">⭐ Promo del Mes</h2>
+              <p className="text-xs sm:text-sm text-gray-500">1 Pizza Grande con 1 Ingrediente</p>
+            </div>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 flex-shrink-0">
+              <X size={22} />
+            </button>
+          </div>
+
+          <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+            <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200 rounded-2xl p-6 text-center">
+              <span className="text-4xl">🍕</span>
+              <h3 className="font-bold text-amber-800 text-lg sm:text-xl mt-2">1 Pizza Grande por $138</h3>
+              <p className="text-xs text-amber-600 mt-1">Elige un ingrediente de la lista a continuación</p>
+            </div>
+
+            {/* Ingrediente */}
+            <div>
+              <h3 className="font-bold text-gray-800 mb-3">Elige 1 ingrediente:</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {INGREDIENTS_PROMO.map(ing => {
+                  const isSelected = selectedIngredient === ing;
+                  return (
+                    <button
+                      key={ing}
+                      onClick={() => setSelectedIngredient(ing)}
+                      className={`p-3 rounded-xl border-2 font-bold transition text-center capitalize ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50 text-amber-700'
+                          : 'border-gray-200 text-gray-700 hover:border-amber-300'
+                      }`}
+                    >
+                      {ing}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Cantidad */}
+            <div>
+              <h3 className="font-bold text-gray-800 mb-3">Cantidad</h3>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setPromoMesCantidad(prev => Math.max(1, prev - 1))}
+                  className="w-12 h-12 flex items-center justify-center border-2 border-gray-300 rounded-xl hover:bg-gray-100 transition"
+                >
+                  <Minus size={20} />
+                </button>
+                <span className="text-3xl font-bold text-gray-900 w-16 text-center">{promoMesCantidad}</span>
+                <button
+                  onClick={() => setPromoMesCantidad(prev => prev + 1)}
+                  className="w-12 h-12 flex items-center justify-center border-2 border-green-400 rounded-xl hover:bg-green-50 transition text-green-700"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Resumen */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex justify-between items-center text-xl font-bold text-gray-900">
+              <span>Total:</span>
+              <span className="text-amber-600">${total.toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 bg-white border-t p-3 sm:p-5">
+            <button
+              onClick={handleAddPromoMes}
+              className="w-full py-4 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl font-bold text-base sm:text-lg transition flex items-center justify-center gap-3 shadow-[0_4px_12px_rgba(245,158,11,0.2)]"
+            >
+              <ShoppingCart size={22} />
+              Agregar al Pedido — ${total.toLocaleString()}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ─── STEP: PROMO ────────────────────────────────────────────────────────────
   if (step === 'promo') {
@@ -438,20 +566,20 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
           <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
             {/* Tamaño */}
             <div>
-              <h3 className="font-bold text-gray-800 mb-3">1. Elige el tamaño</h3>
+              <h3 className="font-bold text-gray-800 mb-3 text-sm sm:text-base">1. Elige el tamaño</h3>
               <div className="grid grid-cols-2 gap-3">
                 {PROMO_SIZES.map(size => (
                   <button
                     key={size.id}
                     onClick={() => setPromoSize(size)}
-                    className={`p-4 rounded-xl border-2 font-bold transition flex items-center justify-between ${
+                    className={`p-3 sm:p-4 rounded-xl border-2 font-bold transition flex items-center justify-between ${
                       promoSize.id === size.id
                         ? 'border-red-600 bg-red-50 text-red-700'
                         : 'border-gray-200 text-gray-700 hover:border-red-300'
                     }`}
                   >
-                    <span>{size.label}</span>
-                    <span className="text-lg">${size.price.toLocaleString()}</span>
+                    <span className="text-xs sm:text-sm">{size.label}</span>
+                    <span className="text-sm sm:text-lg">${size.price.toLocaleString()}</span>
                   </button>
                 ))}
               </div>
@@ -459,14 +587,14 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
 
             {/* Pizza 1 */}
             <div>
-              <h3 className="font-bold text-gray-800 mb-3">2. Primera Pizza</h3>
+              <h3 className="font-bold text-gray-800 mb-2 text-sm sm:text-base">2. Primera Pizza</h3>
               <select
                 value={promoPizza1?.id || ''}
                 onChange={e => {
                   const p = pizzasForSpecialty.find(p => p.id === Number(e.target.value));
                   setPromoPizza1(p || null);
                 }}
-                className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:border-red-500 outline-none font-medium"
+                className="w-full border-2 border-gray-300 rounded-xl px-3 py-2 sm:px-4 sm:py-3 text-gray-800 focus:border-red-500 outline-none font-medium text-xs sm:text-sm"
               >
                 <option value="" disabled>Selecciona una pizza...</option>
                 {[...pizzasForSpecialty].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(p => (
@@ -474,25 +602,53 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                 ))}
               </select>
               {promoPizza1 && (
-                <div className="mt-2 flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <div className="mt-2 flex items-center gap-3 bg-gray-50 p-2 sm:p-3 rounded-xl border border-gray-200">
                   {promoPizza1.imagen && (
-                    <img src={promoPizza1.imagen} alt={promoPizza1.nombre} className="w-12 h-12 rounded-lg object-cover" />
+                    <img src={promoPizza1.imagen} alt={promoPizza1.nombre} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover" />
                   )}
-                  <span className="text-sm text-gray-600 italic">{promoPizza1.descripcion}</span>
+                  <span className="text-xs sm:text-sm text-gray-600 italic">{promoPizza1.descripcion}</span>
                 </div>
               )}
             </div>
 
+            {/* Orilla para Pizza 1 */}
+            {promoPizza1 && (
+              <div className="bg-gray-50/50 p-3 rounded-xl border border-gray-150">
+                <h3 className="font-bold text-gray-700 mb-2 text-xs sm:text-sm">3. Orilla de Primera Pizza</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {crustOptions.map(crust => {
+                    const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+                    const crustP = getCrustPrice(crust.id, promoSizeId);
+                    return (
+                      <button
+                        key={crust.id}
+                        type="button"
+                        onClick={() => setPromoCrust1(crust)}
+                        className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 font-semibold transition text-left ${
+                          promoCrust1.id === crust.id
+                            ? 'border-red-600 bg-red-50 text-red-700'
+                            : 'border-gray-200 text-gray-700 hover:border-red-300'
+                        }`}
+                      >
+                        <span className="text-xs sm:text-sm">{crust.nombre}</span>
+                        <span className="text-xs sm:text-sm font-bold">{crustP > 0 ? `+$${crustP}` : 'Sin cargo'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Pizza 2 */}
             <div>
-              <h3 className="font-bold text-gray-800 mb-3">3. Segunda Pizza</h3>
+              <h3 className="font-bold text-gray-800 mb-2 text-sm sm:text-base">4. Segunda Pizza</h3>
               <select
                 value={promoPizza2?.id || ''}
                 onChange={e => {
                   const p = pizzasForSpecialty.find(p => p.id === Number(e.target.value));
                   setPromoPizza2(p || null);
                 }}
-                className="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:border-red-500 outline-none font-medium"
+                className="w-full border-2 border-gray-300 rounded-xl px-3 py-2 sm:px-4 sm:py-3 text-gray-800 focus:border-red-500 outline-none font-medium text-xs sm:text-sm"
               >
                 <option value="" disabled>Selecciona una pizza...</option>
                 {[...pizzasForSpecialty].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(p => (
@@ -500,45 +656,63 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                 ))}
               </select>
               {promoPizza2 && (
-                <div className="mt-2 flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <div className="mt-2 flex items-center gap-3 bg-gray-50 p-2 sm:p-3 rounded-xl border border-gray-200">
                   {promoPizza2.imagen && (
-                    <img src={promoPizza2.imagen} alt={promoPizza2.nombre} className="w-12 h-12 rounded-lg object-cover" />
+                    <img src={promoPizza2.imagen} alt={promoPizza2.nombre} className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg object-cover" />
                   )}
-                  <span className="text-sm text-gray-600 italic">{promoPizza2.descripcion}</span>
+                  <span className="text-xs sm:text-sm text-gray-600 italic">{promoPizza2.descripcion}</span>
                 </div>
               )}
             </div>
 
-            {/* Orilla de Queso para la Promo */}
-            <div>
-              <h3 className="font-bold text-gray-800 mb-3">4. Orilla Rellena (opcional)</h3>
-              <div className="space-y-2">
-                {crustOptions.map(crust => {
-                  const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
-                  const crustP = getCrustPrice(crust.id, promoSizeId);
-                  return (
-                    <button key={crust.id} type="button" onClick={() => setPromoCrust(crust)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl border-2 font-semibold transition text-left ${promoCrust.id === crust.id ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-700 hover:border-red-300'}`}>
-                      <span className="text-sm">{crust.nombre}</span>
-                      <span className="text-sm font-bold">{crustP > 0 ? `+$${crustP}` : 'Sin cargo'}</span>
-                    </button>
-                  );
-                })}
+            {/* Orilla para Pizza 2 */}
+            {promoPizza2 && (
+              <div className="bg-gray-50/50 p-3 rounded-xl border border-gray-150">
+                <h3 className="font-bold text-gray-700 mb-2 text-xs sm:text-sm">5. Orilla de Segunda Pizza</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {crustOptions.map(crust => {
+                    const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
+                    const crustP = getCrustPrice(crust.id, promoSizeId);
+                    return (
+                      <button
+                        key={crust.id}
+                        type="button"
+                        onClick={() => setPromoCrust2(crust)}
+                        className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 font-semibold transition text-left ${
+                          promoCrust2.id === crust.id
+                            ? 'border-red-600 bg-red-50 text-red-700'
+                            : 'border-gray-200 text-gray-700 hover:border-red-300'
+                        }`}
+                      >
+                        <span className="text-xs sm:text-sm">{crust.nombre}</span>
+                        <span className="text-xs sm:text-sm font-bold">{crustP > 0 ? `+$${crustP}` : 'Sin cargo'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Resumen */}
             {(() => {
               const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
-              const crustP = getCrustPrice(promoCrust.id, promoSizeId);
-              const total = promoSize.price + crustP;
+              const crust1P = getCrustPrice(promoCrust1.id, promoSizeId);
+              const crust2P = getCrustPrice(promoCrust2.id, promoSizeId);
+              const total = promoSize.price + crust1P + crust2P;
               return (
                 <div className="bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-4">
-                  <div className="flex justify-between items-center text-xl font-bold text-gray-900">
+                  <div className="flex justify-between items-center text-base sm:text-xl font-bold text-gray-900">
                     <span>Total Combo:</span>
                     <span className="text-red-600">${total.toLocaleString()}</span>
                   </div>
-                  {crustP > 0 && <p className="text-sm text-gray-500 mt-1">Incluye orilla: +${crustP}</p>}
+                  {(crust1P > 0 || crust2P > 0) && (
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                      Orillas adicionales: {[
+                        crust1P > 0 ? `Pizza 1: +$${crust1P}` : '',
+                        crust2P > 0 ? `Pizza 2: +$${crust2P}` : ''
+                      ].filter(Boolean).join(' | ')}
+                    </p>
+                  )}
                 </div>
               );
             })()}
@@ -547,11 +721,15 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
           <div className="sticky bottom-0 bg-white border-t p-3 sm:p-5">
             {(() => {
               const promoSizeId = promoSize.id.includes('grande') ? 'grande' : 'mediana';
-              const crustP = getCrustPrice(promoCrust.id, promoSizeId);
-              const total = promoSize.price + crustP;
+              const crust1P = getCrustPrice(promoCrust1.id, promoSizeId);
+              const crust2P = getCrustPrice(promoCrust2.id, promoSizeId);
+              const total = promoSize.price + crust1P + crust2P;
               return (
-                <button onClick={handleAddPromo} disabled={!isComplete}
-                  className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 active:scale-95 text-white rounded-xl font-bold text-base sm:text-lg transition flex items-center justify-center gap-3">
+                <button
+                  onClick={handleAddPromo}
+                  disabled={!isComplete}
+                  className="w-full py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 active:scale-95 text-white rounded-xl font-bold text-base sm:text-lg transition flex items-center justify-center gap-3"
+                >
                   <ShoppingCart size={20} />
                   {isComplete ? `Agregar Combo — $${total.toLocaleString()}` : 'Selecciona ambas pizzas'}
                 </button>
@@ -583,6 +761,8 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                   setPromoSize(PROMO_SIZES[0]);
                   setPromoPizza1(null);
                   setPromoPizza2(null);
+                  setPromoCrust1(crustOptions[0] || DEFAULT_CRUST_OPTIONS[0]);
+                  setPromoCrust2(crustOptions[0] || DEFAULT_CRUST_OPTIONS[0]);
                   setStep('promo');
                 }}
                 className="flex flex-col items-center justify-center gap-2 p-3 sm:p-6 bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-400 rounded-xl hover:border-red-600 transition-all active:scale-95 shadow-md"
@@ -607,6 +787,20 @@ const ProductCustomizationModal: React.FC<ProductCustomizationModalProps> = ({
                   </button>
                 );
               })}
+
+              {/* Promo del mes button */}
+              <button
+                onClick={() => {
+                  setStep('promo-mes');
+                  setSelectedIngredient('peperoni');
+                  setPromoMesCantidad(1);
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-3 sm:p-6 bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-400 rounded-xl hover:border-amber-600 transition-all active:scale-95 shadow-md text-left"
+              >
+                <span className="text-3xl sm:text-5xl">⭐</span>
+                <span className="font-bold text-amber-700 text-center text-sm sm:text-base leading-tight">Promo del mes</span>
+                <span className="text-[10px] sm:text-xs text-amber-500 font-semibold text-center">Pizza grande c/ 1 ing.</span>
+              </button>
             </div>
           </div>
         </div>

@@ -16,6 +16,7 @@ interface OrderItem {
   crust?: string;
   nota?: string;
   sauce?: string;
+  extras?: any[];
   totalItemPrice?: number;
   precio_unitario?: number;
 }
@@ -42,21 +43,49 @@ interface BuscarPedidoModalProps {
   onClose: () => void;
 }
 
-/* ─── Imprimir ticket HTML en ventana oculta ─── */
+/* ─── Imprimir ticket HTML via iframe oculto (sin popup de ventana) ─── */
+/* Con Chrome lanzado con --kiosk-printing: envía directo a impresora   */
+/* sin mostrar ningún diálogo. Sin ese flag muestra el diálogo normal.  */
 function printHtmlTicket(html: string) {
-  const win = window.open('', '_blank', 'width=320,height=600,left=-1000,top=-1000');
-  if (!win) return;
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.onload = () => { win.focus(); win.print(); setTimeout(() => win.close(), 1200); };
-  setTimeout(() => { try { win.focus(); win.print(); setTimeout(() => win.close(), 1200); } catch (_) {} }, 600);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:80mm;height:1px;opacity:0;border:none;';
+  document.body.appendChild(iframe);
+
+  const cleanup = () => {
+    if (document.body.contains(iframe)) document.body.removeChild(iframe);
+  };
+
+  let printed = false;
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (_) {}
+    iframe.contentWindow?.addEventListener('afterprint', cleanup);
+    setTimeout(cleanup, 15000);
+  };
+
+  // Asignar onload ANTES de escribir el documento para no perder el evento
+  iframe.onload = doPrint;
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) { cleanup(); return; }
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  // Fallback: si onload no dispara (algunos navegadores), imprimir después de 500ms
+  setTimeout(doPrint, 500);
 }
 
 /* ─── Construir HTML de ticket a partir de un Pedido ─── */
-function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): string {
+function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA' | 'REPARTIDOR', cajeroNombre?: string): string {
   const shortId = (pedido.order_id || '').split('-')[1]?.toUpperCase()
     || (pedido.order_id || '').slice(-6).toUpperCase();
+
+  const cajero = cajeroNombre || (typeof window !== 'undefined' ? localStorage.getItem('capriccio_username') : null) || 'Cajero';
 
   const total = Number(pedido.total) || 0;
 
@@ -74,13 +103,41 @@ function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): str
   const itemsHtml = (pedido.items || []).map(item => {
     const price = Number(item.precio_unitario || item.totalItemPrice || 0);
     const qty = Number(item.quantity || 1);
+
+    let detailsHtml = '';
+    if (item.extras && item.extras.length > 0) {
+      detailsHtml += `<div style="font-size:12px;color:#666;margin-left:12px;font-weight:normal;">+ Extras: ${item.extras.map((e: any) => e.nombre).join(', ')}</div>`;
+    }
+    if (item.sauce) {
+      detailsHtml += `<div style="font-size:12px;font-weight:bold;color:#000;margin-left:12px;">🥣 Salsa: ${item.sauce.toUpperCase()}</div>`;
+    }
+    if (item.nota) {
+      detailsHtml += `<div style="font-size:12px;font-style:italic;color:#555;margin-left:12px;font-weight:normal;">📝 Nota: ${item.nota}</div>`;
+    }
+
+    if (copy === 'COCINA' || copy === 'REPARTIDOR') {
+      return `<tr>
+        <td style="font-size:18px;font-weight:bold;padding:4px 0;border-bottom:1px dashed #ccc;">
+          ${qty}x ${item.nombre}${item.size ? ` (${item.size})` : ''}
+          ${detailsHtml ? `<div style="margin-top:2px;font-weight:normal;line-height:1.2;">${detailsHtml}</div>` : ''}
+        </td>
+        <td style="text-align:right;white-space:nowrap;font-size:18px;font-weight:bold;padding:4px 0;border-bottom:1px dashed #ccc;vertical-align:top;">
+          $${(price * qty).toLocaleString('es-MX')}
+        </td>
+      </tr>`;
+    }
     return `<tr>
-      <td>${qty}x ${item.nombre}${item.size ? ` <small>(${item.size})</small>` : ''}</td>
-      <td style="text-align:right;white-space:nowrap;">$${(price * qty).toLocaleString('es-MX')}</td>
+      <td style="padding:4px 0;border-bottom:1px dashed #ccc;">
+        <b>${qty}x ${item.nombre}</b>${item.size ? ` <small>(${item.size})</small>` : ''}
+        ${detailsHtml ? `<div style="margin-top:2px;line-height:1.2;">${detailsHtml}</div>` : ''}
+      </td>
+      <td style="text-align:right;white-space:nowrap;padding:4px 0;border-bottom:1px dashed #ccc;vertical-align:top;">
+        $${(price * qty).toLocaleString('es-MX')}
+      </td>
     </tr>`;
   }).join('');
 
-  const pagoSection = copy === 'CLIENTE'
+  const pagoSection = (copy === 'CLIENTE' || copy === 'REPARTIDOR')
     ? `<tr><td colspan="2"><hr style="border:1px dashed #000;margin:4px 0;"></td></tr>
        <tr><td><b>TOTAL</b></td><td style="text-align:right;"><b>$${total.toLocaleString('es-MX')}</b></td></tr>
        <tr><td>Pago</td><td style="text-align:right;">${metodoPagoLabel}</td></tr>`
@@ -91,6 +148,8 @@ function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): str
     ? new Date(pedido.created_at).toLocaleString('es-MX')
     : new Date().toLocaleString('es-MX');
 
+  const esDomicilio = pedido.metodo_entrega === 'domicilio';
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -98,36 +157,38 @@ function buildReprintTicketHtml(pedido: Pedido, copy: 'CLIENTE' | 'COCINA'): str
   <style>
     @page { margin: 3mm; size: 80mm auto; }
     * { box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; font-size: 13px; width: 72mm; margin: 0 auto; color: #000; }
+    body { font-family: 'Courier New', Courier, monospace; font-size: 15px; width: 72mm; margin: 0 auto; color: #000; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .big { font-size: 16px; }
-    .copy-label { text-align: center; border: 2px solid #000; padding: 2px 6px; font-size: 12px; font-weight: bold; margin-bottom: 4px; display: inline-block; }
+    .big { font-size: 18px; }
+    .copy-label { text-align: center; border: 2px solid #000; padding: 2px 6px; font-size: 14px; font-weight: bold; margin-bottom: 4px; display: inline-block; }
     hr { border: none; border-top: 1px dashed #000; margin: 5px 0; }
     table { width: 100%; border-collapse: collapse; }
     td { padding: 1px 0; vertical-align: top; }
     .section-title { font-weight: bold; border-bottom: 1px solid #000; margin-top: 5px; margin-bottom: 3px; }
-    .reprint-notice { text-align: center; font-size: 11px; color: #555; }
+    .reprint-notice { text-align: center; font-size: 13px; color: #555; }
+    .direccion-box { border: 2px solid #000; padding: 4px 6px; margin: 4px 0; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="center bold big">CAPRICCIO PIZZERÍA</div>
-  <div class="center" style="font-size:11px;">Pánuco, Ver.</div>
+  <div class="center" style="font-size:13px;">Pánuco, Ver.</div>
   <hr>
   <div class="center"><span class="copy-label">COPIA: ${copy} — REIMPRESIÓN</span></div>
-  <div class="center bold" style="font-size:15px;">ORDEN #${shortId}</div>
-  <div class="center" style="font-size:11px;">${fecha}</div>
+  <div class="center bold" style="font-size:17px;">ORDEN #${shortId}</div>
+  <div class="center" style="font-size:13px;">${fecha}</div>
+  <div class="center" style="font-size:13px;">Cajero: <b>${cajero}</b></div>
   <hr>
 
   <div class="section-title">CLIENTE</div>
   <table>
     <tr><td><b>${pedido.cliente_nombre || 'Sin nombre'}</b></td></tr>
     ${pedido.telefono ? `<tr><td>Tel: ${pedido.telefono}</td></tr>` : ''}
-    ${pedido.direccion ? `<tr><td>Dir: ${pedido.direccion}</td></tr>` : ''}
-    ${pedido.referencias ? `<tr><td>Ref: ${pedido.referencias}</td></tr>` : ''}
   </table>
 
   <div class="section-title">ENTREGA: ${entregaLabel}</div>
+  ${esDomicilio && pedido.direccion ? `<div class="direccion-box">📍 ${pedido.direccion}</div>` : ''}
+  ${esDomicilio && pedido.referencias ? `<div style="font-size:13px;">Ref: ${pedido.referencias}</div>` : ''}
 
   <div class="section-title">ARTÍCULOS</div>
   <table>
@@ -256,8 +317,10 @@ const BuscarPedidoModal: React.FC<BuscarPedidoModalProps> = ({ turno, onClose })
 
   /* ─── REIMPRIMIR ─── */
   const handleReprint = (pedido: Pedido) => {
-    printHtmlTicket(buildReprintTicketHtml(pedido, 'CLIENTE'));
-    setTimeout(() => printHtmlTicket(buildReprintTicketHtml(pedido, 'COCINA')), 1800);
+    const cajero = turno.cajero_nombre || localStorage.getItem('capriccio_username') || 'Cajero';
+    printHtmlTicket(buildReprintTicketHtml(pedido, 'CLIENTE', cajero));
+    setTimeout(() => printHtmlTicket(buildReprintTicketHtml(pedido, 'COCINA', cajero)), 1800);
+    setTimeout(() => printHtmlTicket(buildReprintTicketHtml(pedido, 'REPARTIDOR', cajero)), 3600);
   };
 
   /* ─── CANCELAR ─── */
@@ -417,14 +480,25 @@ const BuscarPedidoModal: React.FC<BuscarPedidoModalProps> = ({ turno, onClose })
           </p>
 
           {/* Items */}
-          <div className="space-y-1 mb-3">
+          <div className="space-y-2 mb-3">
             {(selectedPedido.items || []).map((item, i) => {
               const price = Number(item.precio_unitario || item.totalItemPrice || 0);
               const qty = Number(item.quantity || 1);
               return (
-                <div key={i} className="flex justify-between text-sm">
-                  <span className="text-gray-700">{qty}x {item.nombre}{item.size ? ` (${item.size})` : ''}</span>
-                  <span className="font-bold text-gray-900">${(price * qty).toLocaleString()}</span>
+                <div key={i} className="border-b border-gray-100 py-2 last:border-0">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-700">{qty}x {item.nombre}{item.size ? ` (${item.size})` : ''}</span>
+                    <span className="font-bold text-gray-900">${(price * qty).toLocaleString()}</span>
+                  </div>
+                  {item.sauce && (
+                    <p className="text-xs text-blue-600 font-semibold pl-4">🥣 Salsa: {item.sauce}</p>
+                  )}
+                  {item.nota && (
+                    <p className="text-xs text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded mt-0.5 pl-4">📝 Nota: {item.nota}</p>
+                  )}
+                  {item.extras && item.extras.length > 0 && (
+                    <p className="text-xs text-gray-500 pl-4">+ Extras: {item.extras.map((e: any) => e.nombre).join(', ')}</p>
+                  )}
                 </div>
               );
             })}

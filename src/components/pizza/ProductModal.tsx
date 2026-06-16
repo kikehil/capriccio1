@@ -125,7 +125,8 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
     const appliedCrustPrice = getCrustPrice(appliedCrust, selectedSize?.id || 'mediana');
 
     // Precio Jumbo: siempre fijo (315) sin importar cuántas especialidades se elijan
-    const jumboBasePrice = pizza.precio || selectedSize?.price || 0;
+    // pizza.precio llega como string desde Postgres (NUMERIC) — convertir a número
+    const jumboBasePrice = Number(pizza.precio) || selectedSize?.price || 0;
 
     // Precio mitad y mitad: se cobra el más alto de las dos especialidades
     const segundaMitadPizza = isMitadYMitad && segundaMitad
@@ -146,7 +147,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ pizza, isOpen, onClose, onC
     return (
         <AnimatePresence>
             {isOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}

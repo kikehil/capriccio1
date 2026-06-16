@@ -22,6 +22,8 @@ const PIZZA_SIZES = [
 ];
 
 const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onRefresh }) => {
+    const userRole = typeof window !== 'undefined' ? localStorage.getItem('capriccio_user_role') : '';
+    const isAdmin = userRole === 'admin';
     const [searchTerm, setSearchTerm] = useState('');
     const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('all');
 
@@ -154,7 +156,7 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                 descripcion:  formData.descripcion,
                 imagen:       formData.imagen,
                 categoria:    formData.categoria,
-                activo:       formData.activo,
+                activo:       formData.activo ? 1 : 0,   // DB guarda INTEGER no boolean
                 ingredientes: formData.ingredientes,
             };
 
@@ -181,11 +183,12 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                 setIsModalOpen(false);
                 if (onRefresh) onRefresh();
             } else {
-                alert("Error al guardar el producto.");
+                const errData = await res.json().catch(() => ({}));
+                alert(`Error al guardar el producto (${res.status}): ${errData.error || errData.message || 'Sin detalle'}`);
             }
         } catch (error) {
             console.error(error);
-            alert("Error de conexión.");
+            alert(`Error de conexión: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             setIsSaving(false);
         }
@@ -240,12 +243,14 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                             className="w-full pl-12 pr-4 py-3 bg-slate-50 text-slate-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-red-600/20 font-bold text-sm transition-all placeholder:text-slate-400"
                         />
                     </div>
-                    <button
-                        onClick={openCreateModal}
-                        className="bg-red-600 text-white p-3 rounded-2xl hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all active:scale-95"
-                    >
-                        <Plus size={24} strokeWidth={3} />
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={openCreateModal}
+                            className="bg-red-600 text-white p-3 rounded-2xl hover:bg-red-700 shadow-lg shadow-red-600/20 transition-all active:scale-95"
+                        >
+                            <Plus size={24} strokeWidth={3} />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -314,27 +319,30 @@ const ProductManager: React.FC<ProductManagerProps> = ({ products, onUpdate, onR
                                                 type="checkbox"
                                                 className="sr-only peer"
                                                 checked={product.activo}
+                                                disabled={!isAdmin}
                                                 onChange={() => onUpdate(product.id, { activo: !product.activo })}
                                             />
                                             <div className="w-14 h-8 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-1 after:left-1 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500 transition-colors"></div>
                                         </label>
                                     </div>
 
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => openEditModal(product)}
-                                            className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-950 transition-all"
-                                        >
-                                            <Edit2 size={20} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(product.id)}
-                                            disabled={isDeleting === product.id}
-                                            className="p-3 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all disabled:opacity-50"
-                                        >
-                                            {isDeleting === product.id ? <Loader2 className="animate-spin" size={20} /> : <Trash2 size={20} />}
-                                        </button>
-                                    </div>
+                                    {isAdmin && (
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => openEditModal(product)}
+                                                className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-950 transition-all"
+                                            >
+                                                <Edit2 size={20} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(product.id)}
+                                                disabled={isDeleting === product.id}
+                                                className="p-3 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-600 transition-all disabled:opacity-50"
+                                            >
+                                                {isDeleting === product.id ? <Loader2 className="animate-spin" size={20} /> : <Trash2 size={20} />}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </motion.div>
                         ))}

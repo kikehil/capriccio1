@@ -25,6 +25,7 @@ interface PendingOrder {
   created_at: string;
   repartidor?: string;
   liquidado: number;
+  payment_method?: string;
   items: OrderItem[];
 }
 
@@ -91,11 +92,14 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
     };
   }, [fetchOrders]);
 
-  const handleCobrar = async (order: PendingOrder) => {
+  const handleCobrar = async (order: PendingOrder, overrideMethod?: string) => {
     setCobrandoId(order.order_id);
     try {
       const token = localStorage.getItem('capriccio_token_caja');
       const cajeroNombre = localStorage.getItem('capriccio_username') || 'Cajero';
+      // Si el pedido ya tenía método de pago (tarjeta/transferencia), preservarlo.
+      // El backend también tiene esta protección, pero lo pasamos por claridad.
+      const method = overrideMethod || order.payment_method || 'efectivo';
       const res = await fetch(`${API_URL}/api/caja/cobrar-pedido/${order.order_id}`, {
         method: 'PATCH',
         headers: {
@@ -103,7 +107,7 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          payment_method: 'efectivo',
+          payment_method: method,
           monto_recibido: order.total,
           turno_id: turno.id,
           cajero_nombre: cajeroNombre,
@@ -202,6 +206,14 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
             const et = ENTREGA_MAP[order.metodo_entrega] ?? { label: order.metodo_entrega, icon: null };
             const hora = new Date(order.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
             const isEntregado = order.status === 'entregado';
+            // Pedidos pagados al registrar (tarjeta/transferencia) — NO necesitan COBRAR
+            const yaFuePagado = order.payment_method === 'tarjeta' || order.payment_method === 'transferencia';
+            const pagoLabel =
+              order.payment_method === 'efectivo'      ? { icon: '💵', text: 'Efectivo',      cls: 'bg-green-50 text-green-700' } :
+              order.payment_method === 'tarjeta'       ? { icon: '💳', text: 'Tarjeta',       cls: 'bg-blue-50 text-blue-700' } :
+              order.payment_method === 'transferencia' ? { icon: '🏦', text: 'Transferencia', cls: 'bg-purple-50 text-purple-700' } :
+              order.payment_method === 'no_pago'       ? { icon: '⏳', text: 'Por cobrar',    cls: 'bg-amber-50 text-amber-700' } :
+              null;
 
             return (
               <div
@@ -227,6 +239,11 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
                         </span>
                         {order.order_origin === 'web' && (
                           <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded-full uppercase">WEB</span>
+                        )}
+                        {pagoLabel && (
+                          <span className={cn('text-[9px] font-black px-2 py-0.5 rounded-full uppercase', pagoLabel.cls)}>
+                            {pagoLabel.icon} {pagoLabel.text}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -273,18 +290,34 @@ const ActiveOrdersList: React.FC<ActiveOrdersListProps> = ({ turno }) => {
                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
                     <p className="text-xl font-black italic text-slate-900">${Number(order.total).toFixed(2)}</p>
                   </div>
-                  <button
-                    onClick={() => handleCobrar(order)}
-                    disabled={cobrandoId === order.order_id}
-                    className={cn(
-                      'px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50',
-                      isEntregado
-                        ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200'
-                        : 'bg-slate-900 hover:bg-black text-white shadow-lg'
-                    )}
-                  >
-                    {cobrandoId === order.order_id ? '...' : isEntregado ? '💰 COBRAR' : '💰 Cobrar'}
-                  </button>
+                  {yaFuePagado ? (
+                    /* Tarjeta / Transferencia: ya se cobró al registrar — botón para despachar */
+                    <button
+                      onClick={() => handleCobrar(order, order.payment_method)}
+                      disabled={cobrandoId === order.order_id}
+                      className="flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl border-2 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <span className="text-xs font-black text-emerald-700 uppercase tracking-widest">
+                        {cobrandoId === order.order_id ? '...' : '✅ Despachar'}
+                      </span>
+                      <span className="text-[9px] text-emerald-500 font-semibold">
+                        {order.payment_method === 'tarjeta' ? '💳 Tarjeta' : '🏦 Transferencia'}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleCobrar(order)}
+                      disabled={cobrandoId === order.order_id}
+                      className={cn(
+                        'px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50',
+                        isEntregado
+                          ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-200'
+                          : 'bg-slate-900 hover:bg-black text-white shadow-lg'
+                      )}
+                    >
+                      {cobrandoId === order.order_id ? '...' : isEntregado ? '💰 COBRAR' : '💰 Cobrar'}
+                    </button>
+                  )}
                 </div>
               </div>
             );

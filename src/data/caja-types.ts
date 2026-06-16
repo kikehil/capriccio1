@@ -31,6 +31,7 @@ export interface NewOrderRequest {
   payment_method: PaymentMethod;
   monto_recibido?: number;
   turno_id?: number;
+  descuento_porcentaje?: number;
 }
 
 export interface CajaTurno {

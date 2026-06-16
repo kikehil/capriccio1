@@ -20,20 +20,34 @@ function printHtmlTicket(html: string) {
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:80mm;height:1px;opacity:0;border:none;';
   document.body.appendChild(iframe);
-  const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) { document.body.removeChild(iframe); return; }
-  doc.open();
-  doc.write(html);
-  doc.close();
-  iframe.onload = () => {
+
+  const cleanup = () => {
+    if (document.body.contains(iframe)) document.body.removeChild(iframe);
+  };
+
+  let printed = false;
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
     try {
       iframe.contentWindow?.focus();
       iframe.contentWindow?.print();
     } catch (_) {}
-    const cleanup = () => { if (document.body.contains(iframe)) document.body.removeChild(iframe); };
     iframe.contentWindow?.addEventListener('afterprint', cleanup);
     setTimeout(cleanup, 15000);
   };
+
+  // Asignar onload ANTES de escribir el documento para no perder el evento
+  iframe.onload = doPrint;
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) { cleanup(); return; }
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  // Fallback: si onload no dispara (algunos navegadores), imprimir después de 500ms
+  setTimeout(doPrint, 500);
 }
 
 const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPrev }) => {
@@ -44,22 +58,28 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
   const [printEnabled, setPrintEnabled] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const saved = localStorage.getItem('capriccio_caja_print');
-    return saved === 'true'; // default OFF
+    return saved !== 'false'; // default ON (solo OFF si el usuario lo desactivó explícitamente)
   });
+
+  const baseTotal = (formData.items || []).reduce(
+    (sum: number, item: any) => sum + (item.precio_unitario ?? 0) * (item.cantidad ?? 1),
+    0
+  );
+  const descuentoPorcentaje = formData.descuento_porcentaje || 0;
+  const descuentoMonto = Math.round(baseTotal * (descuentoPorcentaje / 100));
 
   // Calcular total desde items si formData.total no fue propagado correctamente
   const computedTotal: number =
     formData.total && formData.total > 0
       ? formData.total
-      : (formData.items || []).reduce(
-          (sum: number, item: any) => sum + (item.precio_unitario ?? 0) * (item.cantidad ?? 1),
-          0
-        );
+      : Math.max(0, Math.round(baseTotal * (1 - descuentoPorcentaje / 100)));
 
   /* ─── HTML base para ticket térmico 80mm ─── */
-  const buildTicketHtml = (orderData: any, copy: 'CLIENTE' | 'COCINA') => {
+  const buildTicketHtml = (orderData: any, copy: 'CLIENTE' | 'COCINA' | 'REPARTIDOR') => {
     const shortId = (orderData.order_id || '')
       .split('-')[1]?.toUpperCase() || (orderData.order_id || '').slice(-6).toUpperCase();
+
+    const cajeroNombre = turno.cajero_nombre || localStorage.getItem('capriccio_username') || 'Cajero';
 
     const entregaLabel =
       formData.metodo_entrega === 'sucursal' ? 'COMER EN SUCURSAL' :
@@ -75,15 +95,48 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       ? formData.monto_recibido - computedTotal
       : 0;
 
-    const itemsHtml = (formData.items || []).map((item: any) => `
-      <tr>
-        <td>${item.cantidad}x ${item.pizza_nombre}${item.size ? ` <small>(${item.size})</small>` : ''}</td>
-        <td style="text-align:right;white-space:nowrap;">$${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}</td>
-      </tr>
-    `).join('');
+    const itemsHtml = (formData.items || []).map((item: any) => {
+      let detailsHtml = '';
+      if (item.extras && item.extras.length > 0) {
+        detailsHtml += `<div style="font-size:12px;color:#666;margin-left:12px;font-weight:normal;">+ Extras: ${item.extras.map((e: any) => e.nombre).join(', ')}</div>`;
+      }
+      if (item.sauce) {
+        detailsHtml += `<div style="font-size:12px;font-weight:bold;color:#000;margin-left:12px;">🥣 Salsa: ${item.sauce.toUpperCase()}</div>`;
+      }
+      if (item.nota) {
+        detailsHtml += `<div style="font-size:12px;font-style:italic;color:#555;margin-left:12px;font-weight:normal;">📝 Nota: ${item.nota}</div>`;
+      }
 
-    const pagoSection = copy === 'CLIENTE' ? `
+      if (copy === 'COCINA' || copy === 'REPARTIDOR') {
+        return `<tr>
+          <td style="font-size:18px;font-weight:bold;padding:4px 0;border-bottom:1px dashed #ccc;">
+            ${item.cantidad}x ${item.pizza_nombre}${item.size ? ` (${item.size})` : ''}
+            ${detailsHtml ? `<div style="margin-top:2px;font-weight:normal;line-height:1.2;">${detailsHtml}</div>` : ''}
+          </td>
+          <td style="text-align:right;white-space:nowrap;font-size:18px;font-weight:bold;padding:4px 0;border-bottom:1px dashed #ccc;vertical-align:top;">
+            $${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}
+          </td>
+        </tr>`;
+      }
+      return `<tr>
+        <td style="padding:4px 0;border-bottom:1px dashed #ccc;">
+          <b>${item.cantidad}x ${item.pizza_nombre}</b>${item.size ? ` <small>(${item.size})</small>` : ''}
+          ${detailsHtml ? `<div style="margin-top:2px;line-height:1.2;">${detailsHtml}</div>` : ''}
+        </td>
+        <td style="text-align:right;white-space:nowrap;padding:4px 0;border-bottom:1px dashed #ccc;vertical-align:top;">
+          $${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const discountRowsHtml = descuentoPorcentaje > 0 ? `
+      <tr><td>Subtotal</td><td style="text-align:right;">$${baseTotal.toLocaleString('es-MX')}</td></tr>
+      <tr><td>Descuento (${descuentoPorcentaje}%)</td><td style="text-align:right;">-$${descuentoMonto.toLocaleString('es-MX')}</td></tr>
+    ` : '';
+
+    const pagoSection = (copy === 'CLIENTE' || copy === 'REPARTIDOR') ? `
       <tr><td colspan="2"><hr style="border:1px dashed #000;margin:4px 0;"></td></tr>
+      ${discountRowsHtml}
       <tr><td><b>TOTAL</b></td><td style="text-align:right;"><b>$${computedTotal.toLocaleString('es-MX')}</b></td></tr>
       ${formData.payment_method && formData.payment_method !== 'no_pago' ? `
         <tr><td>Pago</td><td style="text-align:right;">${metodoPagoLabel}</td></tr>
@@ -94,8 +147,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       ` : `<tr><td colspan="2" style="text-align:center;">⏳ Pago al recibir</td></tr>`}
     ` : `
       <tr><td colspan="2"><hr style="border:1px dashed #000;margin:4px 0;"></td></tr>
+      ${discountRowsHtml}
       <tr><td><b>TOTAL</b></td><td style="text-align:right;"><b>$${computedTotal.toLocaleString('es-MX')}</b></td></tr>
     `;
+
+    const esDomicilio = formData.metodo_entrega === 'domicilio';
 
     return `<!DOCTYPE html>
 <html lang="es">
@@ -106,19 +162,19 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
     * { box-sizing: border-box; }
     body {
       font-family: 'Courier New', Courier, monospace;
-      font-size: 13px;
+      font-size: 15px;
       width: 72mm;
       margin: 0 auto;
       color: #000;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .big { font-size: 16px; }
+    .big { font-size: 18px; }
     .copy-label {
       text-align: center;
       border: 2px solid #000;
       padding: 2px 6px;
-      font-size: 12px;
+      font-size: 14px;
       font-weight: bold;
       margin-bottom: 4px;
       display: inline-block;
@@ -127,26 +183,33 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
     table { width: 100%; border-collapse: collapse; }
     td { padding: 1px 0; vertical-align: top; }
     .section-title { font-weight: bold; border-bottom: 1px solid #000; margin-top: 5px; margin-bottom: 3px; }
+    .direccion-box {
+      border: 2px solid #000;
+      padding: 4px 6px;
+      margin: 4px 0;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <div class="center bold big">CAPRICCIO PIZZERÍA</div>
-  <div class="center" style="font-size:11px;">Pánuco, Ver.</div>
+  <div class="center" style="font-size:13px;">Pánuco, Ver.</div>
   <hr>
   <div class="center"><span class="copy-label">COPIA: ${copy}</span></div>
-  <div class="center bold" style="font-size:15px;">ORDEN #${shortId}</div>
-  <div class="center" style="font-size:11px;">${new Date().toLocaleString('es-MX')}</div>
+  <div class="center bold" style="font-size:17px;">ORDEN #${shortId}</div>
+  <div class="center" style="font-size:13px;">${new Date().toLocaleString('es-MX')}</div>
+  <div class="center" style="font-size:13px;">Cajero: <b>${cajeroNombre}</b></div>
   <hr>
 
   <div class="section-title">CLIENTE</div>
   <table>
     <tr><td><b>${formData.cliente_nombre || 'Sin nombre'}</b></td></tr>
     ${formData.telefono ? `<tr><td>Tel: ${formData.telefono}</td></tr>` : ''}
-    ${formData.direccion ? `<tr><td>Dir: ${formData.direccion}</td></tr>` : ''}
-    ${formData.referencias ? `<tr><td>Ref: ${formData.referencias}</td></tr>` : ''}
   </table>
 
   <div class="section-title">ENTREGA: ${entregaLabel}</div>
+  ${esDomicilio && formData.direccion ? `<div class="direccion-box">📍 ${formData.direccion}</div>` : ''}
+  ${esDomicilio && formData.referencias ? `<div style="font-size:13px;">Ref: ${formData.referencias}</div>` : ''}
 
   <div class="section-title">ARTÍCULOS</div>
   <table>
@@ -162,14 +225,18 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 </html>`;
   };
 
-  /* ─── Imprime 2 tickets: CLIENTE + COCINA ─── */
-  const printBothTickets = (orderData: any) => {
+  /* ─── Imprime 3 tickets: CLIENTE + COCINA + REPARTIDOR ─── */
+  const printAllTickets = (orderData: any) => {
     // Ticket 1: CLIENTE
     printHtmlTicket(buildTicketHtml(orderData, 'CLIENTE'));
     // Ticket 2: COCINA (con pequeño delay para no saturar la cola de impresión)
     setTimeout(() => {
       printHtmlTicket(buildTicketHtml(orderData, 'COCINA'));
     }, 1800);
+    // Ticket 3: REPARTIDOR
+    setTimeout(() => {
+      printHtmlTicket(buildTicketHtml(orderData, 'REPARTIDOR'));
+    }, 3600);
   };
 
   const handleConfirm = async () => {
@@ -188,6 +255,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
         payment_method: formData.payment_method || 'no_pago',
         monto_recibido: formData.monto_recibido,
         turno_id: turno.id,
+        descuento_porcentaje: formData.descuento_porcentaje,
       };
 
       console.log('📤 Enviando pedido:', payload);
@@ -221,7 +289,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
       setSuccess(true);
 
       // Imprimir solo si está activado
-      if (printEnabled) printBothTickets(result);
+      if (printEnabled) printAllTickets(result);
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -243,9 +311,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
 
         <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-200">
           <p className="text-blue-800 font-semibold">✅ El pedido ha sido enviado a cocina</p>
-          <p className="text-blue-700 text-sm mt-2">
-            🖨️ Se están imprimiendo 2 tickets: uno para el cliente y uno para cocina.
-          </p>
+          {printEnabled && (
+            <p className="text-blue-700 text-sm mt-2">
+              🖨️ Se están imprimiendo 3 tickets: uno para el cliente, uno para cocina y uno para el repartidor.
+            </p>
+          )}
         </div>
 
         <button
@@ -305,9 +375,20 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
             <h3 className="font-bold text-gray-800 mb-3">Items ({formData.items.length})</h3>
             <div className="space-y-2 text-sm">
               {formData.items.map((item: any, idx: number) => (
-                <div key={idx} className="flex justify-between text-gray-900">
-                  <span>{item.cantidad}x {item.pizza_nombre}{item.size ? ` (${item.size})` : ''}</span>
-                  <span className="font-semibold">${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}</span>
+                <div key={idx} className="border-b border-gray-100 py-2 last:border-0">
+                  <div className="flex justify-between text-gray-900">
+                    <span className="font-medium">{item.cantidad}x {item.pizza_nombre}{item.size ? ` (${item.size})` : ''}</span>
+                    <span className="font-semibold">${(item.precio_unitario * item.cantidad).toLocaleString('es-MX')}</span>
+                  </div>
+                  {item.sauce && (
+                    <p className="text-xs text-blue-600 font-semibold pl-4">🥣 Salsa: {item.sauce}</p>
+                  )}
+                  {item.nota && (
+                    <p className="text-xs text-yellow-700 bg-yellow-50 px-2 py-0.5 rounded mt-0.5 pl-4">📝 Nota: {item.nota}</p>
+                  )}
+                  {item.extras && item.extras.length > 0 && (
+                    <p className="text-xs text-gray-500 pl-4">+ Extras: {item.extras.map((e: any) => e.nombre).join(', ')}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -317,7 +398,19 @@ const ConfirmationStep: React.FC<StepProps> = ({ formData, turno, onReset, onPre
           <div className="bg-white p-3 rounded border border-gray-200">
             <h3 className="font-bold text-gray-800 mb-3">Pago</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between font-bold text-lg">
+              {descuentoPorcentaje > 0 && (
+                <>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal:</span>
+                    <span>${baseTotal.toLocaleString('es-MX')}</span>
+                  </div>
+                  <div className="flex justify-between text-red-600">
+                    <span>Descuento ({descuentoPorcentaje}%):</span>
+                    <span>-${descuentoMonto.toLocaleString('es-MX')}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between font-bold text-lg border-t border-gray-150 pt-2">
                 <span>Total:</span>
                 <span className="text-red-600">${computedTotal.toLocaleString('es-MX')}</span>
               </div>

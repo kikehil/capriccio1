@@ -1,17 +1,19 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, Plus, Eye, BarChart3, LogOut, Search, Package, ChevronUp, ChevronDown } from 'lucide-react';
+import { Clock, Plus, Eye, BarChart3, LogOut, Search, Package, ChevronUp, ChevronDown, BarChart2 } from 'lucide-react';
 import NewOrderForm from './NewOrderForm';
 import ActiveOrdersList from './ActiveOrdersList';
 import CashRegisterPanel from './CashRegisterPanel';
 import ShiftReportModal from './ShiftReportModal';
+import CorteXModal from './CorteXModal';
 import BuscarPedidoModal from './BuscarPedidoModal';
 import ProductManagementPanel from './ProductManagementPanel';
+import ReportesPanel from './ReportesPanel';
 import { CajaTurno } from '@/data/caja-types';
 import { API_URL } from '@/lib/socket';
 
-type TabId = 'nuevo' | 'ordenes' | 'caja' | 'productos' | 'cerrar';
+type TabId = 'nuevo' | 'ordenes' | 'caja' | 'productos' | 'reportes' | 'cerrar';
 
 interface TabConfig {
   id: TabId;
@@ -19,14 +21,16 @@ interface TabConfig {
   shortLabel: string;
   icon: React.ReactNode;
   emoji: string;
+  adminOnly?: boolean;
 }
 
 const tabs: TabConfig[] = [
-  { id: 'nuevo',    label: 'Nuevo Pedido',    shortLabel: 'Nuevo',     icon: <Plus size={20} />,    emoji: '➕' },
-  { id: 'ordenes',  label: 'Órdenes Activas', shortLabel: 'Órdenes',   icon: <Eye size={20} />,     emoji: '📋' },
+  { id: 'nuevo',    label: 'Nuevo Pedido',    shortLabel: 'Nuevo',     icon: <Plus size={20} />,      emoji: '➕' },
+  { id: 'ordenes',  label: 'Órdenes Activas', shortLabel: 'Órdenes',   icon: <Eye size={20} />,       emoji: '📋' },
   { id: 'caja',     label: 'Caja & Reportes', shortLabel: 'Caja',      icon: <BarChart3 size={20} />, emoji: '💰' },
-  { id: 'productos',label: 'Productos',        shortLabel: 'Productos', icon: <Package size={20} />, emoji: '🛍️' },
-  { id: 'cerrar',   label: 'Cerrar Turno',    shortLabel: 'Cerrar',    icon: <Clock size={20} />,   emoji: '🔒' },
+  { id: 'productos',label: 'Productos',        shortLabel: 'Productos', icon: <Package size={20} />,   emoji: '🛍️' },
+  { id: 'reportes', label: 'Reportes',         shortLabel: 'Reportes',  icon: <BarChart2 size={20} />, emoji: '📈', adminOnly: true },
+  { id: 'cerrar',   label: 'Cerrar Turno',    shortLabel: 'Cerrar',    icon: <Clock size={20} />,     emoji: '🔒' },
 ];
 
 interface CajaDashboardProps {
@@ -90,7 +94,11 @@ const ScrollButtons: React.FC = () => {
 
 const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, onLogout }) => {
   const [activeTab, setActiveTab] = useState<TabId>('nuevo');
+  const userRole = typeof window !== 'undefined' ? localStorage.getItem('capriccio_user_role') : '';
+  const isAdmin  = userRole === 'admin' || userRole === 'responsable';
+  const visibleTabs = tabs.filter(t => !t.adminOnly || isAdmin);
   const [showShiftModal, setShowShiftModal] = useState(false);
+  const [showCorteXModal, setShowCorteXModal] = useState(false);
   const [showBuscarModal, setShowBuscarModal] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -208,7 +216,7 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
       <div className="hidden sm:flex bg-white border-b-2 border-gray-200 sticky top-0 z-40 items-stretch h-[62px]">
         {/* Tabs */}
         <div className="flex items-stretch">
-          {tabs.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -259,31 +267,46 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
 
         {activeTab === 'nuevo'     && <NewOrderForm turno={turno} />}
         {activeTab === 'ordenes'   && <ActiveOrdersList turno={turno} />}
-        {activeTab === 'caja'      && <CashRegisterPanel turno={turno} />}
+        {activeTab === 'caja'      && <CashRegisterPanel turno={turno} isAdmin={isAdmin} />}
         {activeTab === 'productos' && <ProductManagementPanel />}
+        {activeTab === 'reportes'  && isAdmin && <ReportesPanel />}
 
         {activeTab === 'cerrar' && (
-          <div className="flex flex-col items-center justify-center py-16 gap-5 max-w-sm mx-auto text-center">
-            <span className="text-7xl">🔒</span>
+          <div className="flex flex-col items-center justify-center py-12 gap-4 max-w-sm mx-auto text-center">
+            <span className="text-6xl">🔒</span>
             <div>
-              <h2 className="text-2xl font-black text-gray-900">¿Cerrar el turno?</h2>
-              <p className="text-gray-500 text-sm mt-2">
-                Asegúrate de haber cobrado todos los pedidos pendientes antes de cerrar.
+              <h2 className="text-2xl font-black text-gray-900">Control de Turno</h2>
+              <p className="text-gray-500 text-sm mt-1">
+                Imprime un corte parcial o finaliza el turno al terminar.
               </p>
             </div>
+
+            {/* Corte X — no cierra turno */}
+            <button
+              onClick={() => setShowCorteXModal(true)}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-4 px-10 rounded-2xl text-base transition active:scale-95 flex items-center justify-center gap-3"
+            >
+              📊 Corte X — Reporte Parcial
+            </button>
+            <p className="text-xs text-gray-400 -mt-2">Imprime el estado actual sin cerrar el turno</p>
+
+            <div className="w-full border-t border-dashed border-gray-200 my-1" />
+
+            {/* Cierre definitivo */}
             <button
               onClick={() => setShowShiftModal(true)}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 px-10 rounded-2xl text-base transition active:scale-95"
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-4 px-10 rounded-2xl text-base transition active:scale-95 flex items-center justify-center gap-3"
             >
-              📊 Abrir Reporte de Cierre
+              🔒 Cerrar Turno e Imprimir Corte Z
             </button>
+            <p className="text-xs text-gray-400 -mt-2">Finaliza el turno e imprime el corte de cierre</p>
           </div>
         )}
       </div>
 
       {/* ── MOBILE BOTTOM TAB BAR ────────────────────── */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-gray-200 flex shadow-[0_-2px_10px_rgba(0,0,0,0.08)]">
-        {tabs.map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -305,6 +328,9 @@ const CajaDashboard: React.FC<CajaDashboardProps> = ({ turno, onTurnoCreated, on
       {/* ── MODALS ───────────────────────────────────── */}
       {showShiftModal && (
         <ShiftReportModal turno={turno} onClose={() => setShowShiftModal(false)} />
+      )}
+      {showCorteXModal && (
+        <CorteXModal turno={turno} onClose={() => setShowCorteXModal(false)} />
       )}
       {showBuscarModal && (
         <BuscarPedidoModal turno={turno} onClose={() => setShowBuscarModal(false)} />

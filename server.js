@@ -348,7 +348,7 @@ app.get('/api/menu/productos', async (req, res) => {
     }
 });
 
-app.post('/api/productos', authorize(['admin', 'responsable']), async (req, res) => {
+app.post('/api/productos', authorize(['admin']), async (req, res) => {
     const { nombre, descripcion, precio, imagen, categoria, activo, precios, ingredientes } = req.body;
     try {
         const result = await db.query(
@@ -362,7 +362,7 @@ app.post('/api/productos', authorize(['admin', 'responsable']), async (req, res)
     }
 });
 
-app.patch('/api/productos/:id', authorize(['admin', 'responsable']), async (req, res) => {
+app.patch('/api/productos/:id', authorize(['admin']), async (req, res) => {
     const { id } = req.params;
     const raw = req.body;
     if (Object.keys(raw).length === 0) return res.sendStatus(400);
@@ -390,7 +390,7 @@ app.patch('/api/productos/:id', authorize(['admin', 'responsable']), async (req,
     }
 });
 
-app.delete('/api/productos/:id', authorize(['admin', 'responsable']), async (req, res) => {
+app.delete('/api/productos/:id', authorize(['admin']), async (req, res) => {
     try {
         await db.query('DELETE FROM productos WHERE id = $1', [req.params.id]);
         res.json({ success: true });
@@ -941,9 +941,7 @@ app.get('/api/admin/stats', adminPanelAccess, async (req, res) => {
         const logMsg = `[Stats] User: ${req.user.username}, Negocio: ${negocio_id}, Date: ${today}\n`;
         fs.appendFileSync('stats_debug.log', logMsg);
 
-        // Simple query without offset first to see if it works, 
-        // using date(created_at) because it's already local in DB
-        let baseQuery = "WHERE date(created_at) = $1 AND status != 'cancelado'";
+        let baseQuery = "WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1 AND status != 'cancelado'";
         let params = [today];
 
         if (negocio_id) {
@@ -954,8 +952,8 @@ app.get('/api/admin/stats', adminPanelAccess, async (req, res) => {
 
         const revenueRes = await db.query(`SELECT SUM(total) as revenue FROM pedidos ${baseQuery}`, params);
         const countsRes = await db.query(`SELECT COUNT(*) as count FROM pedidos ${baseQuery}`, params);
-        
-        let liqQuery = "WHERE date(created_at) = $1 AND liquidado = 1";
+
+        let liqQuery = "WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1 AND liquidado = 1";
         if (negocio_id) {
             if (negocio_id == 1) liqQuery += " AND (negocio_id = $2 OR negocio_id IS NULL)";
             else liqQuery += " AND negocio_id = $2";
@@ -1024,17 +1022,18 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
 
         // 1. Tarjetas: recibidos y liquidados del día
         const recibidos = await db.query(
-            "SELECT SUM(total) as monto, COUNT(*) as cantidad FROM pedidos WHERE date(created_at) = $1 AND status != 'cancelado'", [today]);
+            "SELECT SUM(total) as monto, COUNT(*) as cantidad FROM pedidos WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1 AND status != 'cancelado'", [today]);
         const liquidados = await db.query(
-            "SELECT SUM(total) as monto, COUNT(*) as cantidad FROM pedidos WHERE date(created_at) = $1 AND liquidado = 1", [today]);
+            "SELECT SUM(total) as monto, COUNT(*) as cantidad FROM pedidos WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1 AND liquidado = 1", [today]);
 
-        // 2. Gráfica semanal (últimos 7 días) — ::text fuerza formato 'YYYY-MM-DD' en JSON
+        // 2. Gráfica semanal (últimos 7 días)
         const semanal = await db.query(`
-            SELECT created_at::date::text as dia,
+            SELECT DATE(created_at AT TIME ZONE 'America/Mexico_City')::text AS dia,
                    SUM(total) as ventas,
                    COUNT(*) as pedidos
             FROM pedidos
-            WHERE created_at::date >= CURRENT_DATE - INTERVAL '6 days' AND status != 'cancelado'
+            WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') >= (NOW() AT TIME ZONE 'America/Mexico_City')::date - INTERVAL '6 days'
+              AND status != 'cancelado'
             GROUP BY dia ORDER BY dia
         `);
 
@@ -1057,7 +1056,7 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
                 FROM pedidos
                 WHERE status = 'entregado'
                   AND delivered_at IS NOT NULL
-                  AND created_at::date = $1
+                  AND DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1
                   AND EXTRACT(EPOCH FROM (delivered_at - created_at)) / 60 BETWEEN 1 AND 180
             ) as t
         `, [today]);
@@ -1065,7 +1064,7 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
         // 5. Clientes registrados (total y nuevos hoy)
         const clientesStats = await db.query(`
             SELECT COUNT(*) as total,
-                   SUM(CASE WHEN created_at::date = $1 THEN 1 ELSE 0 END) as nuevos_hoy
+                   SUM(CASE WHEN DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1 THEN 1 ELSE 0 END) as nuevos_hoy
             FROM clientes WHERE verificado = 1
         `, [today]);
 
@@ -1075,8 +1074,8 @@ app.get('/api/admin/dashboard', adminOnly, async (req, res) => {
             topRepartidores = await db.query(`
                 SELECT repartidor,
                        ROUND(AVG(EXTRACT(EPOCH FROM (d_at - a_at)) / 60)::numeric, 1) as avg_minutos,
-                       SUM(CASE WHEN d_at::date = $1 THEN 1 ELSE 0 END) as pedidos_hoy,
-                       SUM(CASE WHEN d_at::date >= CURRENT_DATE - INTERVAL '6 days' THEN 1 ELSE 0 END) as pedidos_semana
+                       SUM(CASE WHEN DATE(d_at AT TIME ZONE 'America/Mexico_City') = $1 THEN 1 ELSE 0 END) as pedidos_hoy,
+                       SUM(CASE WHEN DATE(d_at AT TIME ZONE 'America/Mexico_City') >= (NOW() AT TIME ZONE 'America/Mexico_City')::date - INTERVAL '6 days' THEN 1 ELSE 0 END) as pedidos_semana
                 FROM (
                     SELECT repartidor,
                            delivered_at::timestamptz as d_at,
@@ -1125,9 +1124,9 @@ app.get('/api/admin/top-productos', adminOnly, async (req, res) => {
         const today = getBusinessDate();
 
         let dateFilter;
-        if (periodo === 'semana') dateFilter = `p.created_at::date >= CURRENT_DATE - INTERVAL '6 days'`;
-        else if (periodo === 'mes') dateFilter = `TO_CHAR(p.created_at, 'YYYY-MM') = TO_CHAR(NOW(), 'YYYY-MM')`;
-        else dateFilter = `p.created_at::date = '${today}'`;
+        if (periodo === 'semana') dateFilter = `DATE(p.created_at AT TIME ZONE 'America/Mexico_City') >= (NOW() AT TIME ZONE 'America/Mexico_City')::date - INTERVAL '6 days'`;
+        else if (periodo === 'mes') dateFilter = `TO_CHAR(p.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM') = TO_CHAR(NOW() AT TIME ZONE 'America/Mexico_City', 'YYYY-MM')`;
+        else dateFilter = `DATE(p.created_at AT TIME ZONE 'America/Mexico_City') = '${today}'`;
 
         const result = await db.query(`
             SELECT dp.pizza_nombre as nombre,
@@ -1165,10 +1164,10 @@ app.get('/api/admin/reportes', adminOnly, async (req, res) => {
         let queryStr = "SELECT * FROM pedidos";
         let params = [];
         if (inicio && fin) {
-            queryStr += " WHERE (created_at - INTERVAL '6 hours')::date >= $1 AND (created_at - INTERVAL '6 hours')::date <= $2";
+            queryStr += " WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') >= $1 AND DATE(created_at AT TIME ZONE 'America/Mexico_City') <= $2";
             params = [inicio, fin];
         } else if (inicio) {
-            queryStr += " WHERE (created_at - INTERVAL '6 hours')::date = $1";
+            queryStr += " WHERE DATE(created_at AT TIME ZONE 'America/Mexico_City') = $1";
             params = [inicio];
         }
         queryStr += " ORDER BY created_at DESC";
@@ -1351,6 +1350,18 @@ io.on('connection', (socket) => {
             )
         `);
         console.log('✅ Tabla negocio_config lista');
+
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS caja_gastos (
+                id           SERIAL PRIMARY KEY,
+                turno_id     INTEGER REFERENCES caja_turno(id) ON DELETE CASCADE,
+                cajero_nombre TEXT,
+                concepto     TEXT NOT NULL,
+                monto        NUMERIC(10,2) NOT NULL,
+                created_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        console.log('✅ Tabla caja_gastos lista');
 
         // Verificar columnas en pedidos
         // (En PG es mejor usar setup-pg.js para esto, pero mantenemos una versión compatible aquí)
@@ -1933,7 +1944,8 @@ app.patch('/api/caja/turno/:id/cerrar', authorize(['admin', 'caja', 'responsable
 app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
     const {
         cliente_nombre, telefono, direccion, referencias, items,
-        order_origin, metodo_entrega, payment_method, monto_recibido, turno_id
+        order_origin, metodo_entrega, payment_method, monto_recibido, turno_id,
+        descuento_porcentaje
     } = req.body;
 
     try {
@@ -1946,15 +1958,18 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
         const order_id = 'ord-' + Math.random().toString(16).substr(2, 8).toUpperCase();
 
         // Calcular total validando precios en servidor
-        let total = 0;
+        let baseTotal = 0;
         for (const item of items) {
-            total += (item.precio_unitario || 0) * item.cantidad;
+            baseTotal += (item.precio_unitario || 0) * item.cantidad;
             if (item.extras) {
                 for (const extra of item.extras) {
-                    total += (extra.precio || 0) * item.cantidad;
+                    baseTotal += (extra.precio || 0) * item.cantidad;
                 }
             }
         }
+
+        const descuento = Math.min(100, Math.max(0, parseInt(descuento_porcentaje) || 0));
+        const total = Math.max(0, Math.round(baseTotal * (1 - descuento / 100)));
 
         // Si se paga en caja pero no se ingresó monto, asumir pago exacto
         const montoFinal = (payment_method !== 'no_pago' && (!monto_recibido || isNaN(Number(monto_recibido))))
@@ -1973,14 +1988,15 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
             `INSERT INTO pedidos
              (order_id, cliente_nombre, telefono, direccion, referencias, total, status,
               negocio_id, telefono_cliente, metodo_entrega,
-              order_origin, cajero_id, cajero_nombre, payment_method, monto_recibido, pagado_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+              order_origin, cajero_id, cajero_nombre, payment_method, monto_recibido, pagado_at, descuento_porcentaje)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
              RETURNING id, order_id, total`,
             [
                 order_id, cliente_nombre, telefono, direccion, referencias || null, total,
                 'recibido', negocio_id, telefono || null, metodo_entrega,
                 order_origin, req.user.id, req.user.username, payment_method,
-                payment_method !== 'no_pago' ? montoFinal : null, payment_method !== 'no_pago' ? new Date().toISOString() : null
+                payment_method !== 'no_pago' ? montoFinal : null, payment_method !== 'no_pago' ? new Date().toISOString() : null,
+                descuento
             ]
         );
 
@@ -2041,6 +2057,7 @@ app.post('/api/caja/pedidos', authorize(['admin', 'caja', 'responsable']), async
             status: 'recibido',
             metodo_entrega,
             order_origin,
+            descuento_porcentaje: descuento,
             items: items.map(i => ({
                 nombre: i.pizza_nombre,
                 quantity: i.cantidad,
@@ -2175,6 +2192,120 @@ app.get('/api/caja/pedidos/turno/:turno_id', authorize(['admin', 'caja', 'respon
     }
 });
 
+// GET /api/caja/reporte/dia — Obtiene reporte acumulado del día
+app.get('/api/caja/reporte/dia', authorize(['admin', 'responsable']), async (req, res) => {
+    const tz = 'America/Mexico_City';
+    const d = new Date();
+    const today = d.toLocaleDateString('en-CA', { timeZone: tz });
+
+    try {
+        const turnosResult = await db.query(
+            `SELECT COALESCE(SUM(efectivo_inicial), 0) AS total_efectivo_inicial,
+                    MIN(abierto_at) AS primer_apertura
+             FROM caja_turno
+             WHERE DATE(abierto_at AT TIME ZONE $1) = $2`,
+            [tz, today]
+        );
+        const totalEfectivoInicial = Number(turnosResult.rows[0]?.total_efectivo_inicial || 0);
+        const primerApertura = turnosResult.rows[0]?.primer_apertura || null;
+
+        const ordenesResult = await db.query(
+            `SELECT p.*, COUNT(dp.id) as items_count
+             FROM pedidos p
+             LEFT JOIN detalle_pedidos dp ON p.id = dp.pedido_id
+             WHERE (
+                DATE(p.created_at AT TIME ZONE $1) = $2
+                OR (p.liquidado = 1 AND DATE(p.liquidado_at AT TIME ZONE $1) = $2)
+             )
+             GROUP BY p.id
+             ORDER BY p.created_at DESC`,
+            [tz, today]
+        );
+
+        const resumenResult = await db.query(
+            `SELECT
+                COUNT(*)                                                                              AS total_ordenes,
+                SUM(CASE WHEN payment_method NOT IN ('no_pago') AND payment_method IS NOT NULL
+                         THEN 1 ELSE 0 END)                                                         AS ordenes_pagadas,
+                SUM(CASE WHEN payment_method = 'efectivo'     THEN COALESCE(total,0) ELSE 0 END)    AS total_efectivo,
+                SUM(CASE WHEN payment_method = 'tarjeta'      THEN COALESCE(total,0) ELSE 0 END)    AS total_tarjeta,
+                SUM(CASE WHEN payment_method = 'transferencia' THEN COALESCE(total,0) ELSE 0 END)   AS total_transferencia,
+                SUM(CASE WHEN payment_method = 'no_pago'      THEN 1             ELSE 0 END)        AS ordenes_sin_cobrar,
+                SUM(CASE WHEN payment_method = 'no_pago'      THEN COALESCE(total,0) ELSE 0 END)    AS monto_sin_cobrar,
+                SUM(CASE WHEN order_origin = 'web'            THEN 1 ELSE 0 END)                    AS ordenes_web,
+                SUM(CASE WHEN order_origin = 'presencial'     THEN 1 ELSE 0 END)                    AS ordenes_presencial,
+                SUM(CASE WHEN order_origin = 'llamada'        THEN 1 ELSE 0 END)                    AS ordenes_llamada,
+                SUM(CASE WHEN order_origin = 'whatsapp'       THEN 1 ELSE 0 END)                    AS ordenes_whatsapp,
+                SUM(CASE WHEN order_origin IS NULL             THEN 1 ELSE 0 END)                    AS ordenes_sin_canal,
+                SUM(CASE WHEN order_origin = 'web'            THEN COALESCE(total,0) ELSE 0 END)    AS monto_web,
+                SUM(CASE WHEN order_origin = 'presencial'     THEN COALESCE(total,0) ELSE 0 END)    AS monto_presencial,
+                SUM(CASE WHEN order_origin = 'llamada'        THEN COALESCE(total,0) ELSE 0 END)    AS monto_llamada,
+                SUM(CASE WHEN order_origin = 'whatsapp'       THEN COALESCE(total,0) ELSE 0 END)    AS monto_whatsapp,
+                SUM(CASE WHEN payment_method != 'no_pago'     THEN COALESCE(total,0) ELSE 0 END)    AS total_cobrado
+             FROM pedidos
+             WHERE (
+                DATE(created_at AT TIME ZONE $1) = $2
+                OR (liquidado = 1 AND DATE(liquidado_at AT TIME ZONE $1) = $2)
+             )`,
+            [tz, today]
+        );
+
+        const resumen = resumenResult.rows[0] || {};
+
+        const articulosResult = await db.query(
+            `SELECT
+                dp.pizza_nombre                         AS nombre,
+                COALESCE(dp.size, 'sin talla')          AS size,
+                SUM(dp.cantidad)::INTEGER               AS total_qty,
+                SUM(dp.precio_unitario * dp.cantidad)   AS total_monto
+             FROM detalle_pedidos dp
+             JOIN pedidos p ON p.id = dp.pedido_id
+             WHERE (
+                DATE(p.created_at AT TIME ZONE $1) = $2
+                OR (p.liquidado = 1 AND DATE(p.liquidado_at AT TIME ZONE $1) = $2)
+             )
+             AND p.status != 'cancelado'
+             GROUP BY dp.pizza_nombre, dp.size
+             ORDER BY total_qty DESC, dp.pizza_nombre ASC`,
+            [tz, today]
+        );
+
+        const gastosResult = await db.query(
+            `SELECT id, concepto, monto, cajero_nombre,
+                    TO_CHAR(created_at AT TIME ZONE $1, 'HH24:MI') AS hora
+             FROM caja_gastos
+             WHERE DATE(created_at AT TIME ZONE $1) = $2
+             ORDER BY created_at ASC`,
+            [tz, today]
+        );
+        const totalGastos = gastosResult.rows.reduce((s, g) => s + Number(g.monto), 0);
+
+        res.json({
+            turno: {
+                id: 0,
+                cajero_id: 0,
+                cajero_nombre: 'Acumulado del Día',
+                negocio_id: 1,
+                abierto_at: primerApertura || new Date().toISOString(),
+                efectivo_inicial: totalEfectivoInicial,
+                duracion_segundos: primerApertura ? Math.floor((new Date().getTime() - new Date(primerApertura).getTime()) / 1000) : 0,
+                hora_apertura_utc: primerApertura ? new Date(primerApertura).toLocaleTimeString('es-MX', { timeZone: tz }) : '00:00:00'
+            },
+            ordenes: ordenesResult.rows,
+            resumen: {
+                ...resumen,
+                total_gastos: totalGastos,
+                gastos_count: gastosResult.rows.length
+            },
+            gastos: gastosResult.rows,
+            articulos: articulosResult.rows
+        });
+    } catch (e) {
+        console.error('Error al obtener reporte del día:', e);
+        res.status(500).json({ error: 'Error al obtener reporte del día' });
+    }
+});
+
 // GET /api/caja/reporte/turno/:turno_id — Obtiene reporte de un turno
 app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
     const { turno_id } = req.params;
@@ -2250,14 +2381,210 @@ app.get('/api/caja/reporte/turno/:turno_id', authorize(['admin', 'caja', 'respon
             [turno.abierto_at, cerradoAt, turno.cajero_id]
         );
 
+        // Desglose de artículos vendidos por producto y tamaño
+        const articulosResult = await db.query(
+            `SELECT
+                dp.pizza_nombre                         AS nombre,
+                COALESCE(dp.size, 'sin talla')          AS size,
+                SUM(dp.cantidad)::INTEGER               AS total_qty,
+                SUM(dp.precio_unitario * dp.cantidad)   AS total_monto
+             FROM detalle_pedidos dp
+             JOIN pedidos p ON p.id = dp.pedido_id
+             WHERE (
+               (p.cajero_id = $3 AND p.created_at >= $1 AND p.created_at <= $2)
+               OR
+               (p.liquidado = 1 AND p.cajero_id = $3 AND p.liquidado_at >= $1 AND p.liquidado_at <= $2)
+             )
+             AND p.status != 'cancelado'
+             GROUP BY dp.pizza_nombre, dp.size
+             ORDER BY total_qty DESC, dp.pizza_nombre ASC`,
+            [turno.abierto_at, cerradoAt, turno.cajero_id]
+        );
+
+        // Gastos registrados en este turno
+        const gastosResult = await db.query(
+            `SELECT id, concepto, monto, cajero_nombre,
+                    TO_CHAR(created_at AT TIME ZONE 'America/Mexico_City', 'HH24:MI') AS hora
+             FROM caja_gastos WHERE turno_id = $1 ORDER BY created_at ASC`,
+            [turno_id]
+        );
+        const totalGastos = gastosResult.rows.reduce((s, g) => s + Number(g.monto), 0);
+
+        const isCajero = req.user?.role === 'caja';
         res.json({
-            turno,
-            ordenes: ordenesResult.rows,
-            resumen: resumenResult.rows[0]
+            turno: isCajero ? {
+                id: turno.id,
+                cajero_id: turno.cajero_id,
+                cajero_nombre: turno.cajero_nombre,
+                negocio_id: turno.negocio_id,
+                abierto_at: turno.abierto_at,
+                cerrado_at: turno.cerrado_at,
+                duracion_segundos: turno.duracion_segundos,
+                hora_apertura_utc: turno.hora_apertura_utc
+            } : turno,
+            ordenes: isCajero ? [] : ordenesResult.rows,
+            resumen: isCajero ? {
+                total_ordenes: 0,
+                ordenes_pagadas: 0,
+                total_efectivo: 0,
+                total_tarjeta: 0,
+                total_transferencia: 0,
+                ordenes_sin_cobrar: 0,
+                monto_sin_cobrar: 0,
+                ordenes_web: 0,
+                ordenes_presencial: 0,
+                ordenes_llamada: 0,
+                ordenes_whatsapp: 0,
+                ordenes_sin_canal: 0,
+                monto_web: 0,
+                monto_presencial: 0,
+                monto_llamada: 0,
+                monto_whatsapp: 0,
+                total_cobrado: 0,
+                total_gastos: totalGastos,
+                gastos_count: gastosResult.rows.length,
+            } : {
+                ...resumenResult.rows[0],
+                total_gastos:  totalGastos,
+                gastos_count:  gastosResult.rows.length,
+            },
+            articulos: isCajero ? [] : articulosResult.rows,
+            gastos:    gastosResult.rows,
         });
     } catch (e) {
         console.error('Error:', e);
         res.status(500).json({ error: 'Error al obtener reporte' });
+    }
+});
+
+// GET /api/resumen/dia — Dashboard operativo del día (admin/responsable)
+app.get('/api/resumen/dia', authorize(['admin', 'responsable', 'caja']), async (req, res) => {
+    try {
+        const tz = 'America/Mexico_City';
+        const hoy = `DATE(created_at AT TIME ZONE '${tz}') = (NOW() AT TIME ZONE '${tz}')::date`;
+
+        // Métricas del día
+        const stats = await db.query(`
+            SELECT
+                COUNT(*)                                                                    AS total_pedidos,
+                COUNT(*) FILTER (WHERE status NOT IN ('entregado','cancelado'))             AS pedidos_activos,
+                COUNT(*) FILTER (WHERE status = 'entregado' AND liquidado = 0)             AS pendientes_cobro,
+                COALESCE(SUM(total) FILTER (WHERE status != 'cancelado'), 0)               AS total_monto,
+                COALESCE(SUM(total) FILTER (WHERE liquidado = 1 AND payment_method = 'efectivo'), 0) AS efectivo_cobrado,
+                COALESCE(SUM(total) FILTER (WHERE liquidado = 1 AND payment_method = 'tarjeta'), 0)  AS tarjeta_cobrado,
+                COALESCE(SUM(total) FILTER (WHERE liquidado = 1 AND payment_method = 'transferencia'), 0) AS transferencia_cobrada,
+                COALESCE(SUM(total) FILTER (WHERE liquidado = 1 AND payment_method != 'no_pago'), 0)  AS total_cobrado,
+                COALESCE(SUM(total) FILTER (WHERE payment_method = 'no_pago' AND status != 'cancelado'), 0) AS monto_sin_cobrar,
+                COUNT(*) FILTER (WHERE payment_method = 'no_pago' AND status != 'cancelado') AS ordenes_sin_cobrar
+            FROM pedidos
+            WHERE ${hoy}
+        `);
+
+        // Lista de pedidos del día ordenados de más viejos a más recientes
+        const lista = await db.query(`
+            SELECT
+                p.order_id,
+                p.cajero_nombre,
+                p.cliente_nombre,
+                p.telefono,
+                p.total,
+                p.status,
+                p.metodo_entrega,
+                p.order_origin,
+                p.payment_method,
+                p.liquidado,
+                TO_CHAR(p.created_at AT TIME ZONE '${tz}', 'HH24:MI') AS hora,
+                TO_CHAR(p.created_at AT TIME ZONE '${tz}', 'HH24:MI:SS') AS hora_full,
+                p.created_at
+            FROM pedidos p
+            WHERE ${hoy} AND p.status != 'cancelado'
+            ORDER BY p.created_at ASC
+        `);
+
+        const s = stats.rows[0];
+        res.json({
+            fecha: new Date().toLocaleDateString('es-MX', { timeZone: tz, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+            hora_actualizacion: new Date().toLocaleTimeString('es-MX', { timeZone: tz, hour: '2-digit', minute: '2-digit' }),
+            metricas: {
+                total_pedidos:        Number(s.total_pedidos),
+                pedidos_activos:      Number(s.pedidos_activos),
+                pendientes_cobro:     Number(s.pendientes_cobro),
+                total_monto:          Number(s.total_monto),
+                efectivo_cobrado:     Number(s.efectivo_cobrado),
+                tarjeta_cobrado:      Number(s.tarjeta_cobrado),
+                transferencia_cobrada: Number(s.transferencia_cobrada),
+                total_cobrado:        Number(s.total_cobrado),
+                monto_sin_cobrar:     Number(s.monto_sin_cobrar),
+                ordenes_sin_cobrar:   Number(s.ordenes_sin_cobrar),
+            },
+            pedidos: lista.rows,
+        });
+    } catch (e) {
+        console.error('Error resumen/dia:', e);
+        res.status(500).json({ error: 'Error al obtener resumen' });
+    }
+});
+
+// GET /api/caja/reportes/turnos — Lista turnos históricos con resumen (solo admin)
+app.get('/api/caja/reportes/turnos', authorize(['admin', 'responsable']), async (req, res) => {
+    try {
+        const { fecha_desde, fecha_hasta, cajero } = req.query;
+
+        // Rango de fechas — default: últimos 7 días
+        const desde = fecha_desde
+            ? `${fecha_desde}T00:00:00`
+            : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const hasta = fecha_hasta
+            ? `${fecha_hasta}T23:59:59`
+            : new Date().toISOString();
+
+        // Convertir a UTC desde hora local Mexico
+        const desdeUTC = new Date(new Date(desde).getTime() + 6 * 60 * 60 * 1000).toISOString();
+        const hastaUTC = new Date(new Date(hasta).getTime() + 6 * 60 * 60 * 1000).toISOString();
+
+        let whereExtra = '';
+        const params = [desdeUTC, hastaUTC];
+        if (cajero) {
+            params.push(String(cajero).toLowerCase());
+            whereExtra = ` AND LOWER(ct.cajero_nombre) = $${params.length}`;
+        }
+
+        const result = await db.query(
+            `SELECT
+                ct.id,
+                ct.cajero_nombre,
+                ct.cajero_id,
+                ct.efectivo_inicial,
+                ct.abierto_at,
+                ct.cerrado_at,
+                TO_CHAR(ct.abierto_at  AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS hora_apertura,
+                TO_CHAR(ct.cerrado_at  AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD HH24:MI') AS hora_cierre,
+                TO_CHAR(ct.abierto_at  AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD')         AS fecha,
+                COUNT(DISTINCT CASE WHEN p.status != 'cancelado' THEN p.id END)                  AS total_ordenes,
+                COALESCE(SUM(CASE WHEN p.status != 'cancelado' AND p.payment_method = 'efectivo'
+                                  THEN p.total ELSE 0 END), 0)                                   AS total_efectivo,
+                COALESCE(SUM(CASE WHEN p.status != 'cancelado' AND p.payment_method = 'tarjeta'
+                                  THEN p.total ELSE 0 END), 0)                                   AS total_tarjeta,
+                COALESCE(SUM(CASE WHEN p.status != 'cancelado' AND p.payment_method = 'transferencia'
+                                  THEN p.total ELSE 0 END), 0)                                   AS total_transferencia,
+                COALESCE(SUM(CASE WHEN p.status != 'cancelado' AND p.payment_method != 'no_pago'
+                                  THEN p.total ELSE 0 END), 0)                                   AS total_cobrado
+             FROM caja_turno ct
+             LEFT JOIN pedidos p
+                ON p.cajero_id = ct.cajero_id
+               AND p.created_at >= ct.abierto_at
+               AND p.created_at <= COALESCE(ct.cerrado_at, NOW())
+             WHERE ct.abierto_at >= $1 AND ct.abierto_at <= $2
+               ${whereExtra}
+             GROUP BY ct.id
+             ORDER BY ct.abierto_at DESC`,
+            params
+        );
+
+        res.json(result.rows);
+    } catch (e) {
+        console.error('Error reportes/turnos:', e);
+        res.status(500).json({ error: 'Error al obtener reportes' });
     }
 });
 
@@ -2318,7 +2645,7 @@ app.patch('/api/caja/cancelar-pedido/:order_id', authorize(['admin', 'caja', 're
         if (SIMPLE_CANCEL_STATUSES.includes(pedido.status)) {
             // Cancelación directa — no requiere supervisor
             await db.query(
-                `UPDATE pedidos SET status = 'cancelado', updated_at = NOW() WHERE order_id = $1`,
+                `UPDATE pedidos SET status = 'cancelado' WHERE order_id = $1`,
                 [order_id]
             );
             io.emit('pedido_status_update', { order_id, status: 'cancelado' });
@@ -2360,7 +2687,7 @@ app.patch('/api/caja/cancelar-pedido/:order_id', authorize(['admin', 'caja', 're
 
             // Cancelar el pedido
             await db.query(
-                `UPDATE pedidos SET status = 'cancelado', updated_at = NOW() WHERE order_id = $1`,
+                `UPDATE pedidos SET status = 'cancelado' WHERE order_id = $1`,
                 [order_id]
             );
             io.emit('pedido_status_update', { order_id, status: 'cancelado' });
@@ -2433,7 +2760,7 @@ app.get('/api/caja/productos-mgmt', authorize(['admin', 'caja', 'responsable']),
     try {
         const result = await db.query(`
             SELECT p.id, p.nombre, p.descripcion, p.precio, p.categoria,
-                   p.activo, p.imagen,
+                   p.activo, p.imagen, p.precios, p.ingredientes,
                    COALESCE((
                        SELECT COUNT(*)::int FROM detalle_pedidos d
                        WHERE LOWER(d.pizza_nombre) LIKE '%' || LOWER(p.nombre) || '%'
@@ -2474,6 +2801,52 @@ app.patch('/api/caja/productos/:id/toggle-activo', authorize(['admin', 'caja', '
     }
 });
 
+// ─── GASTOS DE TURNO ─────────────────────────────────────────────────────────
+
+// POST /api/caja/gasto — Registrar un gasto en el turno actual
+app.post('/api/caja/gasto', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    const { turno_id, concepto, monto } = req.body;
+    const cajero_nombre = req.user?.username || 'unknown';
+    if (!turno_id || !concepto || !monto) {
+        return res.status(400).json({ error: 'turno_id, concepto y monto son requeridos' });
+    }
+    try {
+        const result = await db.query(
+            `INSERT INTO caja_gastos (turno_id, cajero_nombre, concepto, monto)
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [turno_id, cajero_nombre, concepto.trim(), Number(monto)]
+        );
+        console.log(`[GASTO] Turno ${turno_id} — ${concepto} $${monto} por ${cajero_nombre}`);
+        res.json(result.rows[0]);
+    } catch (e) {
+        console.error('Error al registrar gasto:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/caja/gastos/:turno_id — Obtener gastos del turno
+app.get('/api/caja/gastos/:turno_id', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT * FROM caja_gastos WHERE turno_id = $1 ORDER BY created_at ASC`,
+            [req.params.turno_id]
+        );
+        res.json(result.rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// DELETE /api/caja/gasto/:id — Eliminar un gasto (solo admin y responsable)
+app.delete('/api/caja/gasto/:id', authorize(['admin', 'responsable']), async (req, res) => {
+    try {
+        await db.query('DELETE FROM caja_gastos WHERE id = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // PATCH /api/caja/cobrar-pedido/:order_id — Cobra y liquida un pedido en caja
 app.patch('/api/caja/cobrar-pedido/:order_id', authorize(['admin', 'caja', 'responsable']), async (req, res) => {
     const { order_id } = req.params;
@@ -2481,7 +2854,12 @@ app.patch('/api/caja/cobrar-pedido/:order_id', authorize(['admin', 'caja', 'resp
 
     if (!payment_method) return res.status(400).json({ error: 'Método de pago requerido' });
 
+    const cajeroId = req.user?.id || null;
+    const username = req.user?.username || 'unknown';
+
     try {
+        console.log(`[COBRAR] Procesando pedido: ${order_id} por ${username}`);
+
         // Buscar el pedido
         const pedidoResult = await db.query(
             'SELECT * FROM pedidos WHERE order_id = $1',
@@ -2492,43 +2870,63 @@ app.patch('/api/caja/cobrar-pedido/:order_id', authorize(['admin', 'caja', 'resp
         }
         const pedido = pedidoResult.rows[0];
 
-        // Actualizar pedido: marcar como pagado y liquidado
-        // También asignar cajero_id al cajero que finiquitó, para que aparezca en su reporte de turno
+        // Determinar método de pago final
+        const yaTeníaPago = pedido.payment_method && pedido.payment_method !== 'no_pago';
+        const metodoFinal  = yaTeníaPago ? pedido.payment_method : (payment_method || 'efectivo');
+        const alreadyPaid  = !!pedido.pagado_at;
+
+        // Actualizar pedido
+        // COALESCE(pagado_at, ...) falla si la columna es text; usamos CASE WHEN para mayor compatibilidad
         await db.query(
             `UPDATE pedidos
              SET payment_method = $1,
-                 monto_recibido = $2,
-                 pagado_at = CURRENT_TIMESTAMP,
-                 liquidado = 1,
-                 liquidado_at = CURRENT_TIMESTAMP,
-                 liquidado_por = $3,
-                 cajero_id = $5,
-                 cajero_nombre = $3
+                 monto_recibido = COALESCE(monto_recibido, $2),
+                 pagado_at      = CASE WHEN pagado_at IS NULL THEN NOW()::text ELSE pagado_at END,
+                 liquidado      = 1,
+                 liquidado_at   = CURRENT_TIMESTAMP,
+                 liquidado_por  = $3,
+                 cajero_id      = $5,
+                 cajero_nombre  = $3
              WHERE order_id = $4`,
-            [payment_method, monto_recibido || pedido.total, cajero_nombre || req.user.username, order_id, req.user.id]
+            [metodoFinal, monto_recibido || pedido.total || 0, cajero_nombre || username, order_id, cajeroId]
         );
 
-        // Registrar en caja_pagos_detalle si hay turno activo
-        if (turno_id) {
+        // Registrar en detalle de pagos
+        if (turno_id && !alreadyPaid) {
             try {
+                // Intentamos insertar con 'metodo' (que es el que parece tener tu DB de producción)
+                // Si falla por nombre de columna, el catch lo atrapará pero no romperá el proceso principal
                 await db.query(
-                    `INSERT INTO caja_pagos_detalle (turno_id, pedido_id, monto, metodo, cajero_nombre)
-                     VALUES ($1, $2, $3, $4, $5)`,
-                    [turno_id, pedido.id, pedido.total, payment_method, cajero_nombre || 'Cajero']
-                );
+                    `INSERT INTO caja_pagos_detalle (turno_id, pedido_id, monto, metodo, payment_method, cajero_nombre)
+                     VALUES ($1, $2, $3, $4, $4, $5)`,
+                    [turno_id, pedido.id, pedido.total, metodoFinal, cajero_nombre || username]
+                ).catch(async (err) => {
+                    console.warn('Primer intento de insert falló, reintentando sin campos duplicados:', err.message);
+                    // Reintento compatible
+                    return db.query(
+                        `INSERT INTO caja_pagos_detalle (turno_id, pedido_id, monto, payment_method, cajero_nombre)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [turno_id, pedido.id, pedido.total, metodoFinal, cajero_nombre || username]
+                    );
+                });
             } catch (e) {
-                console.warn('caja_pagos_detalle insert error:', e.message);
+                console.error('⚠️ Error al registrar detalle de pago (pero el pedido se marcó como cobrado):', e.message);
             }
         }
 
         // Notificar via socket
         io.emit('pedidos_liquidados', { order_ids: [order_id] });
-        io.emit('pedido_status_update', { order_id, liquidado: 1, payment_method });
+        io.emit('pedido_status_update', { order_id, liquidado: true, payment_method: metodoFinal });
 
-        res.json({ ok: true, order_id, payment_method, total: pedido.total });
+        res.json({ ok: true, order_id, payment_method: metodoFinal, total: pedido.total });
     } catch (e) {
-        console.error('Error cobrar-pedido:', e);
-        res.status(500).json({ error: 'Error al cobrar pedido' });
+        console.error('❌ ERROR CRÍTICO EN COBRAR-PEDIDO:', e);
+        res.status(500).json({ 
+            error: 'Error al cobrar pedido', 
+            details: e.message,
+            stack: e.stack,
+            context: { order_id, turno_id, user: username }
+        });
     }
 });
 

@@ -90,7 +90,7 @@ const ProductManagementPanel: React.FC = () => {
   /* Role */
   const [userRole, setUserRole] = useState('');
   useEffect(() => { setUserRole(getTokenRole()); }, []);
-  const canEdit = userRole === 'admin' || userRole === 'responsable';
+  const canEdit = userRole === 'admin';
 
   /* Modal */
   const [isModalOpen, setIsModalOpen] = useState(false);

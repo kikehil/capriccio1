@@ -136,7 +136,10 @@ const CustomerInfoStep: React.FC<StepProps> = ({
   /* ── Next step handler ──────────────────────────────── */
   const handleNext = () => {
     if (!validate()) return;
-    if (isDomicilio && addressMode === 'manual') {
+    // Solo reconstruir la dirección desde los campos manuales si el cajero
+    // llenó calleNumero. Si la dirección vino de la BD (cliente encontrado)
+    // y no tocó los campos manuales, conservar la dirección original.
+    if (isDomicilio && addressMode === 'manual' && calleNumero.trim()) {
       const parts = [
         calleNumero,
         colonia && `Col. ${colonia}`,

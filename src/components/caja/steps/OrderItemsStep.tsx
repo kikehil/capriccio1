@@ -66,6 +66,8 @@ const OrderItemsStep: React.FC<StepProps> = ({
       pizza_nombre: itemName,
       cantidad: options.cantidad,
       precio_unitario: finalPrice,
+      size: options.size || undefined,
+      crust: options.crust || undefined,
       extras: options.extras && options.extras.length > 0 ? options.extras : undefined,
       nota: options.nota || undefined,
       sauce: options.sauce || undefined,
