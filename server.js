@@ -1934,6 +1934,43 @@ app.patch('/api/caja/turno/:id/cerrar', authorize(['admin', 'caja', 'responsable
 
         res.json(updateResult.rows[0]);
         io.emit('turno_cerrado', { turno_id: id, cajero: turno.cajero_nombre, total: efectivo_recibido });
+
+        // Notificación WhatsApp al número del negocio (async, no bloquea la respuesta)
+        (async () => {
+            try {
+                const apertura = turno.abierto_at
+                    ? new Date(turno.abierto_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+                    : '—';
+                const cierre = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                const efInicial = Number(turno.efectivo_inicial || 0);
+                const efRecibido = Number(efectivo_recibido || 0);
+                const efReportado = Number(efectivo_reportado || 0);
+                const diferenciaMonto = efReportado - (efInicial + efRecibido);
+                const diferenciaStr = diferenciaMonto === 0
+                    ? '✅ Sin diferencia'
+                    : diferenciaMonto > 0
+                        ? `↑ Sobrante: $${diferenciaMonto.toFixed(2)}`
+                        : `↓ Faltante: $${Math.abs(diferenciaMonto).toFixed(2)}`;
+
+                const cerradoAt = new Date().toISOString();
+                const ventasResult = await db.query(
+                    `SELECT COUNT(*) as total_pedidos, COALESCE(SUM(total),0) as monto_total
+                     FROM pedidos
+                     WHERE cajero_id = $1 AND created_at >= $2 AND created_at <= $3
+                       AND status != 'cancelado'`,
+                    [turno.cajero_id, turno.abierto_at, cerradoAt]
+                );
+                const totalPedidos = ventasResult.rows[0]?.total_pedidos || 0;
+                const montoTotal = Number(ventasResult.rows[0]?.monto_total || 0);
+
+                const msg = `🔒 *CORTE DE TURNO*\n\n👤 Cajero: *${turno.cajero_nombre}*\n🕐 Apertura: ${apertura}\n🕐 Cierre: ${cierre}\n\n📊 *Resumen de Ventas:*\n🛒 Pedidos: ${totalPedidos}\n💰 Monto total: $${montoTotal.toFixed(2)}\n\n💵 *Conciliación de Caja:*\nEfectivo inicial: $${efInicial.toFixed(2)}\nVentas cobradas: $${efRecibido.toFixed(2)}\nEsperado en caja: $${(efInicial + efRecibido).toFixed(2)}\nEfectivo contado: $${efReportado.toFixed(2)}\n${diferenciaStr}${notas ? `\n\n📝 Notas: ${notas}` : ''}`;
+
+                const waNum = await getWANegocio();
+                await sendWA(waNum, msg, '[Corte-Turno]');
+            } catch (waErr) {
+                console.error('[Corte-Turno] ❌ Error al enviar WhatsApp:', waErr.message);
+            }
+        })();
     } catch (e) {
         console.error('Error al cerrar turno:', e);
         res.status(500).json({ error: 'Error al cerrar turno' });
